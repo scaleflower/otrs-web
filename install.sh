@@ -183,6 +183,7 @@ install_system_dependencies() {
     elif command -v yum &> /dev/null; then
         # RHEL/CentOS
         sudo yum install -y \
+            python3-venv \
             python3-devel \
             gcc \
             openssl-devel \
@@ -190,6 +191,7 @@ install_system_dependencies() {
     elif command -v dnf &> /dev/null; then
         # Fedora
         sudo dnf install -y \
+            python3-venv \
             python3-devel \
             gcc \
             openssl-devel \
