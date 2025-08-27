@@ -31,7 +31,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # 全局变量存储上传的数据
 uploaded_data = {}
 
-# 数据库模型 - 简化为单表结构
+# 数据库模型
 class OtrsTicket(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ticket_number = db.Column(db.String(100), unique=True, nullable=False)
@@ -58,6 +58,31 @@ class OtrsTicket(db.Model):
     import_time = db.Column(db.DateTime, default=datetime.utcnow)
     data_source = db.Column(db.String(255))  # 原始文件名
     raw_data = db.Column(db.Text)  # 存储完整的原始JSON数据
+
+
+# 上传记录表
+class UploadDetail(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    upload_time = db.Column(db.DateTime, default=datetime.utcnow)
+    record_count = db.Column(db.Integer, nullable=False)
+    import_mode = db.Column(db.String(50))  # 导入模式：clear_existing 或 incremental
+
+
+# 统计查询记录表
+class Statistic(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    query_time = db.Column(db.DateTime, default=datetime.utcnow)
+    query_type = db.Column(db.String(50))  # 查询类型：main_analysis, age_details, empty_firstresponse, export_excel, export_txt
+    total_records = db.Column(db.Integer)
+    current_open_count = db.Column(db.Integer)
+    empty_firstresponse_count = db.Column(db.Integer)
+    daily_new_count = db.Column(db.Integer)  # 总的新增工单数
+    daily_closed_count = db.Column(db.Integer)  # 总的关闭工单数
+    age_segment = db.Column(db.String(50))  # 年龄分段（仅用于age_details查询）
+    record_count = db.Column(db.Integer)  # 查询结果记录数
+    upload_id = db.Column(db.Integer, db.ForeignKey('upload_detail.id'))
+    upload = db.relationship('UploadDetail', backref=db.backref('statistics', lazy=True))
 
 # 创建数据库表
 with app.app_context():
@@ -390,8 +415,34 @@ def upload_file():
             # Commit all database changes
             db.session.commit()
             
+            # 记录上传详情到upload_detail表
+            import_mode = 'clear_existing' if clear_existing else 'incremental'
+            upload_record = UploadDetail(
+                filename=file.filename,
+                record_count=new_records_count,
+                import_mode=import_mode
+            )
+            db.session.add(upload_record)
+            db.session.commit()
+            
             # Perform analysis from database
             stats = analyze_otrs_tickets_from_db()
+            
+            # 记录统计查询结果到statistic表
+            total_new = sum(stats.get('daily_new', {}).values()) if 'daily_new' in stats else 0
+            total_closed = sum(stats.get('daily_closed', {}).values()) if 'daily_closed' in stats else 0
+            
+            statistic_record = Statistic(
+                query_type='main_analysis',
+                total_records=len(df),
+                current_open_count=stats.get('current_open_count', 0),
+                empty_firstresponse_count=stats.get('empty_firstresponse_count', 0),
+                daily_new_count=total_new,
+                daily_closed_count=total_closed,
+                upload_id=upload_record.id
+            )
+            db.session.add(statistic_record)
+            db.session.commit()
             
             # Prepare response data
             response_data = {
@@ -438,20 +489,31 @@ def export_excel():
             # Daily statistics sheet
             if 'daily_new' in stats and 'daily_closed' in stats:
                 daily_data = []
-                all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
+                # 按日期升序排序进行计算（从最早开始）
+                all_dates_asc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
                 
-                # Calculate cumulative open tickets
+                # 按时间顺序计算累积Open Tickets（从最早日期开始）
                 cumulative_open = 0
-                for date in all_dates:
+                daily_open_calculated = {}
+                for date in all_dates_asc:
                     new_count = stats['daily_new'].get(date, 0)
                     closed_count = stats['daily_closed'].get(date, 0)
                     cumulative_open = cumulative_open + new_count - closed_count
+                    daily_open_calculated[date] = cumulative_open
+                
+                # 按日期降序排序输出（最新日期在前）
+                all_dates_desc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
+                
+                for date in all_dates_desc:
+                    new_count = stats['daily_new'].get(date, 0)
+                    closed_count = stats['daily_closed'].get(date, 0)
+                    open_count = daily_open_calculated.get(date, 0)
                     
                     daily_data.append({
                         'Date': date,
                         'New Tickets': new_count,
                         'Closed Tickets': closed_count,
-                        'Open Tickets': cumulative_open
+                        'Open Tickets': open_count
                     })
                 
                 pd.DataFrame(daily_data).to_excel(writer, sheet_name='Daily Statistics', index=False)
@@ -594,6 +656,14 @@ def export_excel():
         output.seek(0)
         filename = f"otrs_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         
+        # 记录统计查询结果到statistic表
+        statistic_record = Statistic(
+            query_type='export_excel',
+            record_count=1  # 导出操作记录为1次
+        )
+        db.session.add(statistic_record)
+        db.session.commit()
+        
         return send_file(
             output,
             as_attachment=True,
@@ -686,6 +756,15 @@ def get_age_details():
             }
             details.append(detail)
         
+        # 记录统计查询结果到statistic表
+        statistic_record = Statistic(
+            query_type='age_details',
+            age_segment=age_segment,
+            record_count=len(details)
+        )
+        db.session.add(statistic_record)
+        db.session.commit()
+        
         return jsonify({
             'success': True,
             'details': details
@@ -766,6 +845,14 @@ def get_empty_firstresponse_details():
             }
             details.append(detail)
         
+        # 记录统计查询结果到statistic表
+        statistic_record = Statistic(
+            query_type='empty_firstresponse',
+            record_count=len(details)
+        )
+        db.session.add(statistic_record)
+        db.session.commit()
+        
         return jsonify({
             'success': True,
             'details': details
@@ -807,15 +894,26 @@ def export_txt():
             content.append("Date\t\tNew\tClosed\tOpen")
             content.append("-" * 30)
             
-            all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
+            # 按日期升序排序进行计算（从最早开始）
+            all_dates_asc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
             
-            # Calculate cumulative open tickets
+            # 按时间顺序计算累积Open Tickets（从最早日期开始）
             cumulative_open = 0
-            for date in all_dates:
+            daily_open_calculated = {}
+            for date in all_dates_asc:
                 new_count = stats['daily_new'].get(date, 0)
                 closed_count = stats['daily_closed'].get(date, 0)
                 cumulative_open = cumulative_open + new_count - closed_count
-                content.append(f"{date}\t{new_count}\t{closed_count}\t{cumulative_open}")
+                daily_open_calculated[date] = cumulative_open
+            
+            # 按日期降序排序输出（最新日期在前）
+            all_dates_desc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
+            
+            for date in all_dates_desc:
+                new_count = stats['daily_new'].get(date, 0)
+                closed_count = stats['daily_closed'].get(date, 0)
+                open_count = daily_open_calculated.get(date, 0)
+                content.append(f"{date}\t{new_count}\t{closed_count}\t{open_count}")
             content.append("")
         
         # Priority distribution
@@ -955,6 +1053,14 @@ def export_txt():
         text_buffer.seek(0)
         
         filename = f"otrs_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        
+        # 记录统计查询结果到statistic表
+        statistic_record = Statistic(
+            query_type='export_txt',
+            record_count=1  # 导出操作记录为1次
+        )
+        db.session.add(statistic_record)
+        db.session.commit()
         
         return send_file(
             text_buffer,
