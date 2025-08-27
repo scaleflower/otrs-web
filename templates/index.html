@@ -21,7 +21,7 @@
         <!-- Main Content -->
         <main class="main-content">
             <!-- Upload Section -->
-            <section class="upload-section">
+            <section class="upload-section" style="display: none;">
                 <div class="upload-card">
                     <div class="upload-icon">
                         <i class="fas fa-cloud-upload-alt"></i>
@@ -60,7 +60,7 @@
             </section>
 
             <!-- Results Section -->
-            <section id="resultsSection" class="results-section" style="display: none;">
+            <section id="resultsSection" class="results-section">
                 <div class="results-header">
                     <h2><i class="fas fa-chart-bar"></i> Analysis Results</h2>
                     <div class="action-buttons">
@@ -118,6 +118,13 @@
                         <!-- Daily Statistics -->
                         <div class="result-card">
                             <h3><i class="fas fa-calendar-day"></i> Daily Statistics</h3>
+                            <div class="sort-controls">
+                                <label for="sortOrder">Sort by Date:</label>
+                                <select id="sortOrder" class="sort-select">
+                                    <option value="desc" selected>Newest First</option>
+                                    <option value="asc">Oldest First</option>
+                                </select>
+                            </div>
                             <div class="table-container">
                                 <table id="dailyTable" class="data-table">
                                     <thead>

@@ -34,6 +34,25 @@ function initializeEventListeners() {
     exportExcelBtn.addEventListener('click', handleExportExcel);
     exportTxtBtn.addEventListener('click', handleExportTxt);
     
+    // Re-upload button
+    reuploadBtn.addEventListener('click', function() {
+        resultsSection.style.display = 'none';
+        document.querySelector('.upload-section').style.display = 'block';
+        fileInput.value = '';
+        fileInfo.style.display = 'none';
+        uploadBtn.disabled = true;
+    });
+    
+    // Sort order change event
+    const sortOrderSelect = document.getElementById('sortOrder');
+    if (sortOrderSelect) {
+        sortOrderSelect.addEventListener('change', function() {
+            if (analysisData && analysisData.stats.daily_new && analysisData.stats.daily_closed) {
+                updateDailyTable(analysisData.stats);
+            }
+        });
+    }
+    
     // Age segment click events
     document.addEventListener('click', function(e) {
         if (e.target.classList.contains('age-clickable')) {
@@ -216,6 +235,8 @@ function showLoading() {
 }
 
 function showResults(data) {
+    analysisData = data;
+    
     // Hide loading and other sections
     loadingSection.style.display = 'none';
     errorSection.style.display = 'none';
@@ -252,25 +273,47 @@ function updateDailyTable(stats) {
     tableBody.innerHTML = '';
     
     if (stats.daily_new && stats.daily_closed) {
-        const allDates = Array.from(
-            new Set([...Object.keys(stats.daily_new), ...Object.keys(stats.daily_closed)])
-        ).sort();
+        const sortOrderSelect = document.getElementById('sortOrder');
+        const sortOrder = sortOrderSelect ? sortOrderSelect.value : 'desc';
         
-        // Calculate cumulative open tickets
+        let allDates = Array.from(
+            new Set([...Object.keys(stats.daily_new), ...Object.keys(stats.daily_closed)])
+        );
+        
+        // First, calculate cumulative open tickets correctly from earliest date
+        // Sort dates in ascending order for correct cumulative calculation
+        const sortedDatesAsc = [...allDates].sort((a, b) => new Date(a) - new Date(b));
+        
+        // Calculate cumulative open tickets for each date (from earliest to latest)
+        const cumulativeByDate = {};
         let cumulativeOpen = 0;
         
-        allDates.forEach(date => {
+        sortedDatesAsc.forEach(date => {
             const newCount = stats.daily_new[date] || 0;
             const closedCount = stats.daily_closed[date] || 0;
             cumulativeOpen = cumulativeOpen + newCount - closedCount;
-            const openCount = cumulativeOpen;
+            cumulativeByDate[date] = cumulativeOpen;
+        });
+        
+        // Now sort dates based on selected display order
+        allDates.sort((a, b) => {
+            const dateA = new Date(a);
+            const dateB = new Date(b);
+            return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+        });
+        
+        // Display the table with correct cumulative values
+        allDates.forEach(date => {
+            const newCount = stats.daily_new[date] || 0;
+            const closedCount = stats.daily_closed[date] || 0;
+            const cumulativeOpen = cumulativeByDate[date] || 0;
             
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${date}</td>
                 <td>${newCount}</td>
                 <td>${closedCount}</td>
-                <td>${openCount}</td>
+                <td>${cumulativeOpen}</td>
             `;
             tableBody.appendChild(row);
         });
