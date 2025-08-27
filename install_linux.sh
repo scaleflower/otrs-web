@@ -43,10 +43,13 @@ check_python_version() {
     local python_cmd="$1"
     if command -v "$python_cmd" &> /dev/null; then
         local version
-        version=$("$python_cmd" -c "import sys; print('.'.join(map(str, sys.version_info[:2])))")
-        if [ "$(echo "$version >= 3.9" | bc -l)" -eq 1 ]; then
-            echo "$python_cmd"
-            return 0
+        version=$("$python_cmd" -c "import sys; print('.'.join(map(str, sys.version_info[:2])))" 2>/dev/null)
+        if [ $? -eq 0 ] && [ -n "$version" ]; then
+            # 使用awk进行版本比较，避免bc依赖
+            if awk -v ver="$version" 'BEGIN {split(ver, parts, "."); major=parts[1]; minor=parts[2]; if (major > 3 || (major == 3 && minor >= 9)) exit 0; else exit 1}'; then
+                echo "$python_cmd"
+                return 0
+            fi
         fi
     fi
     return 1
@@ -74,8 +77,11 @@ check_system_requirements() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         log_info "检测到操作系统: $NAME $VERSION"
+        OS_NAME="$NAME"
+        OS_VERSION="$VERSION_ID"
     else
         log_warning "无法确定操作系统类型"
+        OS_NAME="unknown"
     fi
     
     # 检查Python
@@ -85,15 +91,71 @@ check_system_requirements() {
     elif python_cmd=$(check_python_version "python"); then
         log_success "找到 Python: $python_cmd"
     else
-        log_error "需要 Python 3.9 或更高版本，请先安装 Python"
+        log_info "未找到 Python 3.9+，开始自动安装..."
+        install_python
+        if python_cmd=$(check_python_version "python3"); then
+            log_success "Python 安装成功: $python_cmd"
+        else
+            log_error "Python 安装失败，请手动安装 Python 3.9+"
+        fi
     fi
     
     # 检查pip
     if ! command -v pip3 &> /dev/null && ! command -v pip &> /dev/null; then
-        log_error "pip 未安装，请先安装 pip"
+        log_info "pip 未安装，开始自动安装..."
+        install_pip
+        if ! command -v pip3 &> /dev/null && ! command -v pip &> /dev/null; then
+            log_error "pip 安装失败，请手动安装 pip"
+        else
+            log_success "pip 安装成功"
+        fi
     fi
     
     PYTHON_CMD="$python_cmd"
+}
+
+# 安装Python
+install_python() {
+    log_info "安装 Python 3.9+..."
+    
+    if [[ "$OS_NAME" == *"Ubuntu"* ]] || [[ "$OS_NAME" == *"Debian"* ]]; then
+        # Ubuntu/Debian
+        sudo apt-get update
+        sudo apt-get install -y software-properties-common
+        sudo add-apt-repository -y ppa:deadsnakes/ppa
+        sudo apt-get update
+        sudo apt-get install -y python3.9 python3.9-venv python3.9-dev
+        sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1
+        
+    elif [[ "$OS_NAME" == *"CentOS"* ]] || [[ "$OS_NAME" == *"Red Hat"* ]]; then
+        # CentOS/RHEL
+        sudo yum install -y epel-release
+        sudo yum install -y python39 python39-devel
+        
+    elif [[ "$OS_NAME" == *"Fedora"* ]]; then
+        # Fedora
+        sudo dnf install -y python39 python39-devel
+        
+    else
+        log_error "无法自动安装 Python，请手动安装 Python 3.9+"
+        exit 1
+    fi
+}
+
+# 安装pip
+install_pip() {
+    log_info "安装 pip..."
+    
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get install -y python3-pip
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y python3-pip
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y python3-pip
+    else
+        # 使用get-pip.py作为备用方案
+        curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+    fi
 }
 
 # 安装系统依赖
