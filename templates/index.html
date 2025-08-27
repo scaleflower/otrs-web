@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OTRS工单数据分析系统</title>
+    <title>OTRS Ticket Analysis System</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -13,8 +13,8 @@
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1><i class="fas fa-chart-line"></i> OTRS工单数据分析系统</h1>
-                <p>上传Excel文件，获取详细的工单统计分析和可视化报告</p>
+                <h1><i class="fas fa-chart-line"></i> OTRS Ticket Analysis System</h1>
+                <p>Upload Excel files to get detailed ticket statistics and visual reports</p>
             </div>
         </header>
 
@@ -26,20 +26,20 @@
                     <div class="upload-icon">
                         <i class="fas fa-cloud-upload-alt"></i>
                     </div>
-                    <h2>上传Excel文件</h2>
-                    <p>支持 .xlsx 和 .xls 格式的文件</p>
+                    <h2>Upload Excel File</h2>
+                    <p>Supports .xlsx and .xls file formats</p>
                     
                     <form id="uploadForm" class="upload-form">
                         <div class="file-input-wrapper">
                             <input type="file" id="fileInput" accept=".xlsx,.xls" class="file-input">
                             <label for="fileInput" class="file-input-label">
                                 <i class="fas fa-file-excel"></i>
-                                <span>选择Excel文件</span>
+                                <span>Select Excel File</span>
                             </label>
                         </div>
                         <button type="submit" class="upload-btn" disabled>
                             <i class="fas fa-upload"></i>
-                            开始分析
+                            Start Analysis
                         </button>
                     </form>
                     
@@ -54,22 +54,27 @@
             <section id="loadingSection" class="loading-section" style="display: none;">
                 <div class="loading-card">
                     <div class="spinner"></div>
-                    <h3>正在分析数据...</h3>
-                    <p>请稍候，系统正在处理您的Excel文件</p>
+                    <h3>Analyzing Data...</h3>
+                    <p>Please wait while we process your Excel file</p>
                 </div>
             </section>
 
             <!-- Results Section -->
             <section id="resultsSection" class="results-section" style="display: none;">
                 <div class="results-header">
-                    <h2><i class="fas fa-chart-bar"></i> 分析结果</h2>
-                    <div class="export-buttons">
-                        <button id="exportExcel" class="btn btn-primary">
-                            <i class="fas fa-file-excel"></i> 导出Excel
-                        </button>
-                        <button id="exportTxt" class="btn btn-secondary">
-                            <i class="fas fa-file-alt"></i> 导出文本
-                        </button>
+                    <h2><i class="fas fa-chart-bar"></i> Analysis Results</h2>
+                    <div class="action-buttons">
+                        <div class="export-buttons">
+                            <button id="reuploadBtn" class="btn btn-secondary">
+                                <i class="fas fa-upload"></i> Re-upload
+                            </button>
+                            <button id="exportExcel" class="btn btn-primary">
+                                <i class="fas fa-file-excel"></i> Export Excel
+                            </button>
+                            <button id="exportTxt" class="btn btn-secondary">
+                                <i class="fas fa-file-alt"></i> Export Text
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -81,7 +86,7 @@
                         </div>
                         <div class="card-content">
                             <h3 id="totalRecords">0</h3>
-                            <p>总记录数</p>
+                            <p>Total Records</p>
                         </div>
                     </div>
                     
@@ -91,7 +96,7 @@
                         </div>
                         <div class="card-content">
                             <h3 id="openTickets">0</h3>
-                            <p>当前开放工单</p>
+                            <p>Current Open Tickets</p>
                         </div>
                     </div>
                     
@@ -101,53 +106,111 @@
                         </div>
                         <div class="card-content">
                             <h3 id="emptyFirstResponse">0</h3>
-                            <p>空FirstResponse</p>
+                            <p>Empty FirstResponse</p>
                         </div>
                     </div>
                 </div>
 
                 <!-- Detailed Results -->
                 <div class="detailed-results">
-                    <!-- Daily Statistics -->
-                    <div class="result-card">
-                        <h3><i class="fas fa-calendar-day"></i> 每日统计</h3>
-                        <div class="table-container">
-                            <table id="dailyTable" class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th>日期</th>
-                                        <th>新增工单</th>
-                                        <th>关闭工单</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <!-- Will be populated by JavaScript -->
-                                </tbody>
-                            </table>
+                    <!-- First Row: Daily Statistics and Age Segments -->
+                    <div class="result-row">
+                        <!-- Daily Statistics -->
+                        <div class="result-card">
+                            <h3><i class="fas fa-calendar-day"></i> Daily Statistics</h3>
+                            <div class="table-container">
+                                <table id="dailyTable" class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>New Tickets</th>
+                                            <th>Closed Tickets</th>
+                                            <th>Open Tickets</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Age Segments -->
+                        <div class="result-card">
+                            <h3><i class="fas fa-clock"></i> Open Tickets Age Segments</h3>
+                            <div class="table-container">
+                                <table class="data-table age-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Time Period</th>
+                                            <th>Ticket Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>≤24 hours</td>
+                                            <td id="age24h" class="age-clickable" data-age-segment="24h">0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>24-48 hours</td>
+                                            <td id="age24_48h" class="age-clickable" data-age-segment="24_48h">0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>48-72 hours</td>
+                                            <td id="age48_72h" class="age-clickable" data-age-segment="48_72h">0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>>72 hours</td>
+                                            <td id="age72h" class="age-clickable" data-age-segment="72h">0</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- Age Details Container -->
+                            <div id="ageDetailsContainer" class="details-container" style="display: none;">
+                                <h4>Ticket Details</h4>
+                                <div class="table-container">
+                                    <table id="ageDetailsTable" class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Ticket Number</th>
+                                                <th>Age</th>
+                                                <th>Created</th>
+                                                <th>Priority</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <!-- Will be populated by JavaScript -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Priority Distribution -->
-                    <div class="result-card">
-                        <h3><i class="fas fa-star"></i> 优先级分布</h3>
-                        <div class="chart-container">
-                            <canvas id="priorityChart"></canvas>
-                        </div>
-                    </div>
-
-                    <!-- State Distribution -->
-                    <div class="result-card">
-                        <h3><i class="fas fa-tasks"></i> 状态分布</h3>
-                        <div class="chart-container">
-                            <canvas id="stateChart"></canvas>
-                        </div>
-                    </div>
-
-                    <!-- Empty FirstResponse -->
-                    <div class="result-card">
-                        <h3><i class="fas fa-exclamation-circle"></i> 空FirstResponse分布</h3>
-                        <div class="chart-container">
-                            <canvas id="emptyFirstResponseChart"></canvas>
+                    <!-- Second Row: Empty FirstResponse -->
+                    <div class="result-row">
+                        <div class="result-card full-width">
+                            <h3><i class="fas fa-exclamation-circle"></i> Empty FirstResponse Distribution</h3>
+                            <div class="chart-container">
+                                <canvas id="emptyFirstResponseChart"></canvas>
+                            </div>
+                            <!-- Empty FirstResponse Details Table -->
+                            <div class="table-container">
+                                <table id="emptyFirstResponseTable" class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Ticket Number</th>
+                                            <th>Age</th>
+                                            <th>Created</th>
+                                            <th>Priority</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -159,16 +222,16 @@
                     <div class="error-icon">
                         <i class="fas fa-exclamation-triangle"></i>
                     </div>
-                    <h3>处理失败</h3>
+                    <h3>Processing Failed</h3>
                     <p id="errorMessage"></p>
-                    <button onclick="hideError()" class="btn btn-primary">重试</button>
+                    <button onclick="hideError()" class="btn btn-primary">Try Again</button>
                 </div>
             </section>
         </main>
 
         <!-- Footer -->
         <footer class="footer">
-            <p>&copy; 2025 OTRS工单分析系统 | 基于Flask和Pandas构建</p>
+            <p>&copy; 2025 OTRS Ticket Analysis System | Built with Flask and Pandas</p>
         </footer>
     </div>
 

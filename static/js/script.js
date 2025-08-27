@@ -13,10 +13,9 @@ const errorSection = document.getElementById('errorSection');
 const errorMessage = document.getElementById('errorMessage');
 const exportExcelBtn = document.getElementById('exportExcel');
 const exportTxtBtn = document.getElementById('exportTxt');
+const reuploadBtn = document.getElementById('reuploadBtn');
 
 // Chart instances
-let priorityChart = null;
-let stateChart = null;
 let emptyFirstResponseChart = null;
 
 // Initialize the application
@@ -34,6 +33,14 @@ function initializeEventListeners() {
     // Export buttons
     exportExcelBtn.addEventListener('click', handleExportExcel);
     exportTxtBtn.addEventListener('click', handleExportTxt);
+    
+    // Age segment click events
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('age-clickable')) {
+            const ageSegment = e.target.getAttribute('data-age-segment');
+            handleAgeSegmentClick(ageSegment);
+        }
+    });
 }
 
 function handleFileSelect(event) {
@@ -44,7 +51,7 @@ function handleFileSelect(event) {
         const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
         
         if (!validExtensions.includes(fileExtension)) {
-            showError('请选择Excel文件 (.xlsx 或 .xls 格式)');
+            showError('Please select an Excel file (.xlsx or .xls format)');
             resetFileInput();
             return;
         }
@@ -64,7 +71,7 @@ function handleFormSubmit(event) {
     
     const file = fileInput.files[0];
     if (!file) {
-        showError('请先选择Excel文件');
+        showError('Please select an Excel file first');
         return;
     }
     
@@ -83,7 +90,7 @@ function handleFormSubmit(event) {
     .then(response => {
         if (!response.ok) {
             return response.json().then(errorData => {
-                throw new Error(errorData.error || '上传失败');
+                throw new Error(errorData.error || 'Upload failed');
             });
         }
         return response.json();
@@ -93,7 +100,7 @@ function handleFormSubmit(event) {
             analysisData = data;
             showResults(data);
         } else {
-            throw new Error(data.error || '分析失败');
+            throw new Error(data.error || 'Analysis failed');
         }
     })
     .catch(error => {
@@ -103,7 +110,7 @@ function handleFormSubmit(event) {
 
 function handleExportExcel() {
     if (!analysisData) {
-        showError('没有可导出的数据');
+        showError('No data available for export');
         return;
     }
     
@@ -122,7 +129,7 @@ function handleExportExcel() {
     .then(response => {
         if (!response.ok) {
             return response.json().then(errorData => {
-                throw new Error(errorData.error || '导出失败');
+                throw new Error(errorData.error || 'Export failed');
             });
         }
         return response.blob();
@@ -151,7 +158,7 @@ function handleExportExcel() {
 
 function handleExportTxt() {
     if (!analysisData) {
-        showError('没有可导出的数据');
+        showError('No data available for export');
         return;
     }
     
@@ -170,7 +177,7 @@ function handleExportTxt() {
     .then(response => {
         if (!response.ok) {
             return response.json().then(errorData => {
-                throw new Error(errorData.error || '导出失败');
+                throw new Error(errorData.error || 'Export failed');
             });
         }
         return response.blob();
@@ -221,9 +228,20 @@ function showResults(data) {
     // Update daily statistics table
     updateDailyTable(data.stats);
     
+    // Update age segments if available
+    if (data.stats.age_segments) {
+        document.getElementById('age24h').textContent = (data.stats.age_segments.age_24h || 0).toLocaleString();
+        document.getElementById('age24_48h').textContent = (data.stats.age_segments.age_24_48h || 0).toLocaleString();
+        document.getElementById('age48_72h').textContent = (data.stats.age_segments.age_48_72h || 0).toLocaleString();
+        document.getElementById('age72h').textContent = (data.stats.age_segments.age_72h || 0).toLocaleString();
+    }
+    
     // Create charts
     createCharts(data.stats);
-    
+
+    // Update empty first response table
+    updateEmptyFirstResponseTable(data.stats);
+
     // Show results section with animation
     resultsSection.style.display = 'block';
     resultsSection.classList.add('fade-in');
@@ -238,92 +256,32 @@ function updateDailyTable(stats) {
             new Set([...Object.keys(stats.daily_new), ...Object.keys(stats.daily_closed)])
         ).sort();
         
+        // Calculate cumulative open tickets
+        let cumulativeOpen = 0;
+        
         allDates.forEach(date => {
             const newCount = stats.daily_new[date] || 0;
             const closedCount = stats.daily_closed[date] || 0;
+            cumulativeOpen = cumulativeOpen + newCount - closedCount;
+            const openCount = cumulativeOpen;
             
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td>${date}</td>
                 <td>${newCount}</td>
                 <td>${closedCount}</td>
+                <td>${openCount}</td>
             `;
             tableBody.appendChild(row);
         });
     } else {
-        tableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">无每日统计数据</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">无每日统计数据</td></tr>';
     }
 }
 
 function createCharts(stats) {
     // Destroy existing charts if they exist
-    if (priorityChart) priorityChart.destroy();
-    if (stateChart) stateChart.destroy();
     if (emptyFirstResponseChart) emptyFirstResponseChart.destroy();
-    
-    // Priority Distribution Chart
-    if (stats.priority_distribution) {
-        const priorityCtx = document.getElementById('priorityChart').getContext('2d');
-        priorityChart = new Chart(priorityCtx, {
-            type: 'doughnut',
-            data: {
-                labels: Object.keys(stats.priority_distribution),
-                datasets: [{
-                    data: Object.values(stats.priority_distribution),
-                    backgroundColor: [
-                        '#ff6b6b', '#feca57', '#48dbfb', '#1dd1a1', '#ff9ff3'
-                    ],
-                    borderWidth: 2,
-                    borderColor: '#ffffff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 20,
-                            usePointStyle: true
-                        }
-                    }
-                }
-            }
-        });
-    }
-    
-    // State Distribution Chart
-    if (stats.state_distribution) {
-        const stateCtx = document.getElementById('stateChart').getContext('2d');
-        stateChart = new Chart(stateCtx, {
-            type: 'pie',
-            data: {
-                labels: Object.keys(stats.state_distribution),
-                datasets: [{
-                    data: Object.values(stats.state_distribution),
-                    backgroundColor: [
-                        '#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'
-                    ],
-                    borderWidth: 2,
-                    borderColor: '#ffffff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 20,
-                            usePointStyle: true
-                        }
-                    }
-                }
-            }
-        });
-    }
     
     // Empty FirstResponse Chart
     if (stats.empty_firstresponse_by_priority) {
@@ -386,6 +344,115 @@ function resetFileInput() {
 // Utility function to format numbers
 function formatNumber(num) {
     return new Intl.NumberFormat('zh-CN').format(num);
+}
+
+// Handle age segment click
+function handleAgeSegmentClick(ageSegment) {
+    if (!analysisData) return;
+    
+    // Show loading state for details
+    const detailsContainer = document.getElementById('ageDetailsContainer');
+    const detailsTable = document.getElementById('ageDetailsTable');
+    detailsTable.querySelector('tbody').innerHTML = '<tr><td colspan="4" style="text-align: center;">加载中...</td></tr>';
+    detailsContainer.style.display = 'block';
+    
+    // Send request to get age segment details
+    fetch('/age-details', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            age_segment: ageSegment,
+            analysis_data: analysisData,
+            session_id: analysisData.session_id
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('获取明细数据失败');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            updateAgeDetailsTable(data.details);
+        } else {
+            throw new Error(data.error || '获取明细数据失败');
+        }
+    })
+    .catch(error => {
+        detailsTable.querySelector('tbody').innerHTML = `<tr><td colspan="4" style="text-align: center; color: #dc3545;">${error.message}</td></tr>`;
+    });
+}
+
+// Update age details table
+function updateAgeDetailsTable(details) {
+    const tableBody = document.querySelector('#ageDetailsTable tbody');
+    tableBody.innerHTML = '';
+    
+    if (details && details.length > 0) {
+        details.forEach(ticket => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${ticket.ticket_number || 'N/A'}</td>
+                <td>${ticket.age || 'N/A'}</td>
+                <td>${ticket.created || 'N/A'}</td>
+                <td>${ticket.priority || 'N/A'}</td>
+            `;
+            tableBody.appendChild(row);
+        });
+    } else {
+        tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">无数据</td></tr>';
+    }
+}
+
+// Update empty first response table with real data
+function updateEmptyFirstResponseTable(stats) {
+    const tableBody = document.querySelector('#emptyFirstResponseTable tbody');
+    tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">加载中...</td></tr>';
+    
+    // Send request to get empty first response details
+    fetch('/empty-firstresponse-details', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            session_id: analysisData.session_id
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('获取空FirstResponse明细数据失败');
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            tableBody.innerHTML = '';
+            
+            if (data.details && data.details.length > 0) {
+                data.details.forEach(ticket => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${ticket.ticket_number || 'N/A'}</td>
+                        <td>${ticket.age || 'N/A'}</td>
+                        <td>${ticket.created || 'N/A'}</td>
+                        <td>${ticket.priority || 'N/A'}</td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            } else {
+                tableBody.innerHTML = '<tr><td colspan="4" style="text-align: center;">无空FirstResponse工单</td></tr>';
+            }
+        } else {
+            throw new Error(data.error || '获取空FirstResponse明细数据失败');
+        }
+    })
+    .catch(error => {
+        tableBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #dc3545;">${error.message}</td></tr>`;
+    });
 }
 
 // Add some animation effects

@@ -324,9 +324,25 @@ body {
 
 /* Detailed Results */
 .detailed-results {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 25px;
+}
+
+.result-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 25px;
+}
+
+.full-width {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 768px) {
+    .result-row {
+        grid-template-columns: 1fr;
+    }
 }
 
 .result-card {
@@ -509,6 +525,96 @@ body {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* Age Table Styles */
+.age-table {
+    margin-top: 15px;
+}
+
+.age-table th {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    text-align: center;
+    font-weight: 600;
+    padding: 15px;
+}
+
+.age-table td {
+    text-align: center;
+    padding: 12px;
+    font-weight: 500;
+}
+
+.age-table tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+.age-table tr:hover {
+    background-color: #e9ecef;
+    transform: scale(1.02);
+    transition: all 0.2s ease;
+}
+
+.age-table tr:first-child td {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.age-table tr:nth-child(2) td {
+    color: #ffc107;
+    font-weight: 600;
+}
+
+.age-table tr:nth-child(3) td {
+    color: #fd7e14;
+    font-weight: 600;
+}
+
+.age-table tr:last-child td {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+/* Chart Container Height Adjustment */
+.chart-container {
+    position: relative;
+    height: 200px;
+    margin-top: 15px;
+}
+
+/* Age Clickable Styles */
+.age-clickable {
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.age-clickable:hover {
+    background-color: #e3f2fd !important;
+    transform: scale(1.05);
+}
+
+.age-clickable::after {
+    content: '🔍';
+    margin-left: 5px;
+    font-size: 0.9em;
+    opacity: 0.7;
+}
+
+/* Details Container */
+.details-container {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+}
+
+.details-container h4 {
+    margin-bottom: 15px;
+    color: #2c3e50;
+    font-size: 1.1rem;
 }
 
 /* Utility Classes */
