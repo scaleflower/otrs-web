@@ -278,7 +278,7 @@ def export_excel():
             # Daily statistics sheet
             if 'daily_new' in stats and 'daily_closed' in stats:
                 daily_data = []
-                all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
+                all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
                 
                 # Calculate cumulative open tickets
                 cumulative_open = 0
@@ -605,7 +605,7 @@ def export_txt():
             content.append("Date\t\tNew\tClosed\tOpen")
             content.append("-" * 30)
             
-            all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
+            all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
             
             # Calculate cumulative open tickets
             cumulative_open = 0
