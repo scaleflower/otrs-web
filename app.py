@@ -4,6 +4,7 @@ OTRS Ticket Analysis Web Application
 """
 
 from flask import Flask, render_template, request, send_file, jsonify
+from flask_sqlalchemy import SQLAlchemy
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -18,12 +19,47 @@ matplotlib.use('Agg')  # 使用非交互式后端
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///otrs_data.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# 初始化数据库
+db = SQLAlchemy(app)
 
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # 全局变量存储上传的数据
 uploaded_data = {}
+
+# 数据库模型
+class UploadSession(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.String(50), unique=True, nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    upload_time = db.Column(db.DateTime, default=datetime.utcnow)
+    total_records = db.Column(db.Integer, nullable=False)
+    
+    # 关系
+    tickets = db.relationship('Ticket', backref='session', lazy=True)
+
+class Ticket(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.String(50), db.ForeignKey('upload_session.session_id'), nullable=False)
+    ticket_number = db.Column(db.String(100))
+    created_date = db.Column(db.DateTime)
+    closed_date = db.Column(db.DateTime)
+    state = db.Column(db.String(100))
+    priority = db.Column(db.String(50))
+    first_response = db.Column(db.String(255))
+    age = db.Column(db.String(50))
+    age_hours = db.Column(db.Float)
+    
+    # 原始数据存储（用于灵活查询）
+    raw_data = db.Column(db.Text)
+
+# 创建数据库表
+with app.app_context():
+    db.create_all()
 
 def parse_age_to_hours(age_str):
     """Parse Age string to total hours"""
@@ -213,6 +249,19 @@ def index():
     """Main page"""
     return render_template('index.html')
 
+@app.route('/uploads')
+def view_uploads():
+    """View all uploaded sessions"""
+    upload_sessions = UploadSession.query.order_by(UploadSession.upload_time.desc()).all()
+    return render_template('uploads.html', upload_sessions=upload_sessions)
+
+@app.route('/upload/<session_id>')
+def view_upload_details(session_id):
+    """View details of a specific upload session"""
+    upload_session = UploadSession.query.filter_by(session_id=session_id).first_or_404()
+    tickets = Ticket.query.filter_by(session_id=session_id).all()
+    return render_template('upload_details.html', upload_session=upload_session, tickets=tickets)
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Handle file upload and analysis"""
@@ -232,6 +281,77 @@ def upload_file():
             session_id = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
             uploaded_data[session_id] = df
             
+            # Save to database
+            upload_session = UploadSession(
+                session_id=session_id,
+                filename=file.filename,
+                total_records=len(df)
+            )
+            db.session.add(upload_session)
+            
+            # Find actual column names
+            possible_columns = {
+                'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
+                'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
+                'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date'],
+                'state': ['State', 'Status', 'Ticket State', 'state', 'status'],
+                'priority': ['Priority', 'priority'],
+                'firstresponse': ['FirstResponse', 'First Response', 'firstresponse'],
+                'age': ['Age', 'age']
+            }
+            
+            actual_columns = {}
+            for key, possible_names in possible_columns.items():
+                for col in df.columns:
+                    if any(name.lower() in col.lower() for name in possible_names):
+                        actual_columns[key] = col
+                        break
+            
+            # Save each ticket to database
+            for _, row in df.iterrows():
+                # Parse dates
+                created_date = None
+                closed_date = None
+                
+                if 'created' in actual_columns:
+                    try:
+                        created_date = pd.to_datetime(row[actual_columns['created']], errors='coerce')
+                        if pd.isna(created_date):
+                            created_date = None
+                    except:
+                        created_date = None
+                
+                if 'closed' in actual_columns:
+                    try:
+                        closed_date = pd.to_datetime(row[actual_columns['closed']], errors='coerce')
+                        if pd.isna(closed_date):
+                            closed_date = None
+                    except:
+                        closed_date = None
+                
+                # Parse age to hours
+                age_hours = 0
+                if 'age' in actual_columns:
+                    age_hours = parse_age_to_hours(row[actual_columns['age']])
+                
+                # Create ticket record
+                ticket = Ticket(
+                    session_id=session_id,
+                    ticket_number=str(row[actual_columns.get('ticket_number', '')]) if 'ticket_number' in actual_columns else None,
+                    created_date=created_date,
+                    closed_date=closed_date,
+                    state=str(row[actual_columns.get('state', '')]) if 'state' in actual_columns else None,
+                    priority=str(row[actual_columns.get('priority', '')]) if 'priority' in actual_columns else None,
+                    first_response=str(row[actual_columns.get('firstresponse', '')]) if 'firstresponse' in actual_columns else None,
+                    age=str(row[actual_columns.get('age', '')]) if 'age' in actual_columns else None,
+                    age_hours=age_hours,
+                    raw_data=row.to_json()
+                )
+                db.session.add(ticket)
+            
+            # Commit all database changes
+            db.session.commit()
+            
             # Perform analysis
             stats = analyze_otrs_tickets(df)
             
@@ -246,6 +366,7 @@ def upload_file():
             return jsonify(response_data)
             
         except Exception as e:
+            db.session.rollback()
             return jsonify({'error': f'Error processing file: {str(e)}'}), 500
     
     return jsonify({'error': 'Invalid file format. Please upload Excel file (.xlsx or .xls)'}), 400
