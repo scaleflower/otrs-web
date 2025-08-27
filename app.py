@@ -85,28 +85,40 @@ def parse_age_to_hours(age_str):
     
     return (days * 24) + hours + (minutes / 60)
 
-def analyze_otrs_tickets(df):
-    """Main function for OTRS ticket data analysis"""
-    # Check for common OTRS column name variants
-    possible_columns = {
-        'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
-        'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date'],
-        'state': ['State', 'Status', 'Ticket State', 'state', 'status'],
-        'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
-        'priority': ['Priority', 'priority'],
-        'firstresponse': ['FirstResponse', 'First Response', 'firstresponse']
-    }
+def analyze_otrs_tickets_from_db(session_id):
+    """Main function for OTRS ticket data analysis from database"""
+    # Get tickets from database for this session
+    tickets = Ticket.query.filter_by(session_id=session_id).all()
     
-    # Find actual column names using case-insensitive matching
-    actual_columns = {}
-    for key, possible_names in possible_columns.items():
-        for col in df.columns:
-            if any(name.lower() in col.lower() for name in possible_names):
-                actual_columns[key] = col
-                break
+    if not tickets:
+        return {}
     
-    # Execute ticket statistical analysis with identified columns
-    return analyze_ticket_statistics(df, actual_columns)
+    # Convert tickets to DataFrame for analysis
+    ticket_data = []
+    for ticket in tickets:
+        ticket_data.append({
+            'TicketNumber': ticket.ticket_number,
+            'Created': ticket.created_date,
+            'Closed': ticket.closed_date,
+            'State': ticket.state,
+            'Priority': ticket.priority,
+            'FirstResponse': ticket.first_response,
+            'Age': ticket.age,
+            'AgeHours': ticket.age_hours
+        })
+    
+    df = pd.DataFrame(ticket_data)
+    
+    # Execute ticket statistical analysis
+    return analyze_ticket_statistics(df, {
+        'ticket_number': 'TicketNumber',
+        'created': 'Created',
+        'closed': 'Closed',
+        'state': 'State',
+        'priority': 'Priority',
+        'firstresponse': 'FirstResponse',
+        'age': 'Age'
+    })
 
 def analyze_ticket_statistics(df, columns):
     """Perform ticket statistical analysis"""
@@ -352,8 +364,8 @@ def upload_file():
             # Commit all database changes
             db.session.commit()
             
-            # Perform analysis
-            stats = analyze_otrs_tickets(df)
+            # Perform analysis from database
+            stats = analyze_otrs_tickets_from_db(session_id)
             
             # Prepare response data
             response_data = {
@@ -440,8 +452,25 @@ def export_excel():
             # Add age details sheets if session_id is provided
             if 'session_id' in data:
                 session_id = data['session_id']
-                if session_id in uploaded_data:
-                    df = uploaded_data[session_id]
+                # Get tickets from database for this session
+                tickets = Ticket.query.filter_by(session_id=session_id).all()
+                
+                if tickets:
+                    # Convert tickets to DataFrame
+                    ticket_data = []
+                    for ticket in tickets:
+                        ticket_data.append({
+                            'TicketNumber': ticket.ticket_number,
+                            'Created': ticket.created_date,
+                            'Closed': ticket.closed_date,
+                            'State': ticket.state,
+                            'Priority': ticket.priority,
+                            'FirstResponse': ticket.first_response,
+                            'Age': ticket.age,
+                            'AgeHours': ticket.age_hours
+                        })
+                    
+                    df = pd.DataFrame(ticket_data)
                     
                     # Find actual column names
                     possible_columns = {
@@ -560,11 +589,27 @@ def get_age_details():
         age_segment = data['age_segment']
         session_id = data['session_id']
         
-        # Get the stored DataFrame
-        if session_id not in uploaded_data:
+        # Get tickets from database for this session
+        tickets = Ticket.query.filter_by(session_id=session_id).all()
+        
+        if not tickets:
             return jsonify({'error': 'Session expired or invalid session ID'}), 400
         
-        df = uploaded_data[session_id]
+        # Convert tickets to DataFrame
+        ticket_data = []
+        for ticket in tickets:
+            ticket_data.append({
+                'TicketNumber': ticket.ticket_number,
+                'Created': ticket.created_date,
+                'Closed': ticket.closed_date,
+                'State': ticket.state,
+                'Priority': ticket.priority,
+                'FirstResponse': ticket.first_response,
+                'Age': ticket.age,
+                'AgeHours': ticket.age_hours
+            })
+        
+        df = pd.DataFrame(ticket_data)
         
         # Find actual column names
         possible_columns = {
@@ -634,11 +679,27 @@ def get_empty_firstresponse_details():
         
         session_id = data['session_id']
         
-        # Get the stored DataFrame
-        if session_id not in uploaded_data:
+        # Get tickets from database for this session
+        tickets = Ticket.query.filter_by(session_id=session_id).all()
+        
+        if not tickets:
             return jsonify({'error': 'Session expired or invalid session ID'}), 400
         
-        df = uploaded_data[session_id]
+        # Convert tickets to DataFrame
+        ticket_data = []
+        for ticket in tickets:
+            ticket_data.append({
+                'TicketNumber': ticket.ticket_number,
+                'Created': ticket.created_date,
+                'Closed': ticket.closed_date,
+                'State': ticket.state,
+                'Priority': ticket.priority,
+                'FirstResponse': ticket.first_response,
+                'Age': ticket.age,
+                'AgeHours': ticket.age_hours
+            })
+        
+        df = pd.DataFrame(ticket_data)
         
         # Find actual column names
         possible_columns = {
@@ -774,8 +835,25 @@ def export_txt():
         # Add age details and empty first response details if session_id is provided
         if 'session_id' in data:
             session_id = data['session_id']
-            if session_id in uploaded_data:
-                df = uploaded_data[session_id]
+            # Get tickets from database for this session
+            tickets = Ticket.query.filter_by(session_id=session_id).all()
+            
+            if tickets:
+                # Convert tickets to DataFrame
+                ticket_data = []
+                for ticket in tickets:
+                    ticket_data.append({
+                        'TicketNumber': ticket.ticket_number,
+                        'Created': ticket.created_date,
+                        'Closed': ticket.closed_date,
+                        'State': ticket.state,
+                        'Priority': ticket.priority,
+                        'FirstResponse': ticket.first_response,
+                        'Age': ticket.age,
+                        'AgeHours': ticket.age_hours
+                    })
+                
+                df = pd.DataFrame(ticket_data)
                 
                 # Find actual column names
                 possible_columns = {
