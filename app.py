@@ -1,6 +1,6 @@
 """
 OTRS Ticket Analysis Web Application
-基于Flask的工单数据分析Web应用
+Flask-based ticket data analysis web application
 """
 
 from flask import Flask, render_template, request, send_file, jsonify
@@ -14,7 +14,7 @@ import io
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import matplotlib
-matplotlib.use('Agg')  # 使用非交互式后端
+matplotlib.use('Agg')  # Use non-interactive backend
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -22,16 +22,19 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///otrs_data.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# 初始化数据库
+# Application version
+APP_VERSION = "1.2.0"
+
+# Initialize database
 db = SQLAlchemy(app)
 
-# 确保上传目录存在
+# Ensure upload directory exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# 全局变量存储上传的数据
-uploaded_data = {}
+# Global variable to store uploaded data (deprecated - now using database)
+# uploaded_data = {}
 
-# 全局变量存储处理进度
+# Global variable to store processing progress
 processing_status = {
     'current_step': 0,
     'total_steps': 7,
@@ -40,7 +43,7 @@ processing_status = {
 }
 
 def update_processing_status(step, message, details=''):
-    """更新处理状态"""
+    """Update processing status"""
     global processing_status
     processing_status['current_step'] = step
     processing_status['message'] = message
@@ -48,14 +51,14 @@ def update_processing_status(step, message, details=''):
     print(f"Step {step}/{processing_status['total_steps']}: {message} - {details}")
 
 def log_database_operation(operation_type, table_name, records_affected=0, operation_details='', filename=''):
-    """记录数据库操作到日志表"""
+    """Log database operations to log table"""
     try:
-        # 获取用户信息（IP地址）
+        # Get user information (IP address)
         user_ip = request.remote_addr if request else 'unknown'
         user_agent = request.headers.get('User-Agent', 'unknown') if request else 'unknown'
         user_info = f"IP: {user_ip}, Browser: {user_agent[:100]}"
         
-        # 创建日志记录
+        # Create log entry
         log_entry = DatabaseLog(
             operation_type=operation_type,
             table_name=table_name,
@@ -73,7 +76,7 @@ def log_database_operation(operation_type, table_name, records_affected=0, opera
         print(f"Error logging database operation: {str(e)}")
         db.session.rollback()
 
-# 数据库模型
+# Database models
 class OtrsTicket(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ticket_number = db.Column(db.String(100), unique=True, nullable=False)
@@ -85,7 +88,7 @@ class OtrsTicket(db.Model):
     age = db.Column(db.String(50))
     age_hours = db.Column(db.Float)
     
-    # Excel中的其他常见字段
+    # Other common fields from Excel
     queue = db.Column(db.String(255))
     owner = db.Column(db.String(255))
     customer_id = db.Column(db.String(255))
@@ -96,49 +99,49 @@ class OtrsTicket(db.Model):
     category = db.Column(db.String(255))
     sub_category = db.Column(db.String(255))
     
-    # 元数据
+    # Metadata
     import_time = db.Column(db.DateTime, default=datetime.utcnow)
-    data_source = db.Column(db.String(255))  # 原始文件名
-    raw_data = db.Column(db.Text)  # 存储完整的原始JSON数据
+    data_source = db.Column(db.String(255))  # Original filename
+    raw_data = db.Column(db.Text)  # Store complete raw JSON data
 
 
-# 上传记录表
+# Upload record table
 class UploadDetail(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False)
     upload_time = db.Column(db.DateTime, default=datetime.utcnow)
     record_count = db.Column(db.Integer, nullable=False)
-    import_mode = db.Column(db.String(50))  # 导入模式：clear_existing 或 incremental
+    import_mode = db.Column(db.String(50))  # Import mode: clear_existing or incremental
 
 
-# 统计查询记录表
+# Statistics query record table
 class Statistic(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     query_time = db.Column(db.DateTime, default=datetime.utcnow)
-    query_type = db.Column(db.String(50))  # 查询类型：main_analysis, age_details, empty_firstresponse, export_excel, export_txt
+    query_type = db.Column(db.String(50))  # Query type: main_analysis, age_details, empty_firstresponse, export_excel, export_txt
     total_records = db.Column(db.Integer)
     current_open_count = db.Column(db.Integer)
     empty_firstresponse_count = db.Column(db.Integer)
-    daily_new_count = db.Column(db.Integer)  # 总的新增工单数
-    daily_closed_count = db.Column(db.Integer)  # 总的关闭工单数
-    age_segment = db.Column(db.String(50))  # 年龄分段（仅用于age_details查询）
-    record_count = db.Column(db.Integer)  # 查询结果记录数
+    daily_new_count = db.Column(db.Integer)  # Total new tickets count
+    daily_closed_count = db.Column(db.Integer)  # Total closed tickets count
+    age_segment = db.Column(db.String(50))  # Age segment (only for age_details queries)
+    record_count = db.Column(db.Integer)  # Query result record count
     upload_id = db.Column(db.Integer, db.ForeignKey('upload_detail.id'))
     upload = db.relationship('UploadDetail', backref=db.backref('statistics', lazy=True))
 
 
-# 数据库操作日志表
+# Database operation log table
 class DatabaseLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     operation_time = db.Column(db.DateTime, default=datetime.utcnow)
-    operation_type = db.Column(db.String(50))  # 操作类型：clear_tickets, upload, delete, update, etc.
-    table_name = db.Column(db.String(50))  # 操作的表名
-    records_affected = db.Column(db.Integer)  # 影响的记录数
-    operation_details = db.Column(db.Text)  # 操作详情
-    user_info = db.Column(db.String(255))  # 用户信息（IP、浏览器等）
-    filename = db.Column(db.String(255))  # 相关文件名（如果有）
+    operation_type = db.Column(db.String(50))  # Operation type: clear_tickets, upload, delete, update, etc.
+    table_name = db.Column(db.String(50))  # Table name
+    records_affected = db.Column(db.Integer)  # Records affected
+    operation_details = db.Column(db.Text)  # Operation details
+    user_info = db.Column(db.String(255))  # User information (IP, browser, etc.)
+    filename = db.Column(db.String(255))  # Related filename (if any)
 
-# 创建数据库表
+# Create database tables
 with app.app_context():
     db.create_all()
 
@@ -374,7 +377,7 @@ def analyze_ticket_statistics(df, columns):
     if 'Age' in df.columns:
         df['age_hours'] = df['Age'].apply(parse_age_to_hours)
         
-        # Age分段统计（只统计Open工单）
+        # Age segment statistics (only for Open tickets)
         if 'closed' in columns:
             open_tickets = df[df['closed_date'].isna()]
             age_segments = {
@@ -439,7 +442,7 @@ def generate_histogram(daily_new, daily_closed, daily_open=None):
 @app.route('/')
 def index():
     """Main page"""
-    return render_template('index.html')
+    return render_template('index.html', APP_VERSION=APP_VERSION)
 
 @app.route('/uploads')
 def view_uploads():
@@ -468,32 +471,32 @@ def upload_file():
     
     if file and file.filename.endswith(('.xlsx', '.xls')):
         try:
-            # Step 1: 开始处理文件
-            update_processing_status(1, '开始处理Excel文件', '正在读取文件...')
+            # Step 1: Start processing file
+            update_processing_status(1, 'Start processing Excel file', 'Reading file...')
             
             # Read Excel file
             df = pd.read_excel(file)
-            update_processing_status(2, 'Excel文件读取完成', f'共找到 {len(df)} 条记录')
+            update_processing_status(2, 'Excel file read completed', f'Found {len(df)} records in total')
             
             # Clear existing data if requested
             if clear_existing:
-                update_processing_status(3, '清理现有数据', '正在删除数据库中的旧记录...')
-                # 获取当前记录数用于日志记录
+                update_processing_status(3, 'Clearing existing data', 'Deleting old records from database...')
+                # Get current record count for logging
                 existing_record_count = OtrsTicket.query.count()
                 OtrsTicket.query.delete()
                 print(f"Cleared existing data, importing {len(df)} new records")
                 
-                # 记录数据库操作日志
+                # Log database operation
                 log_database_operation(
                     operation_type='clear_tickets',
                     table_name='otrs_ticket',
                     records_affected=existing_record_count,
-                    operation_details='上传文件时清除了现有数据',
+                    operation_details='Cleared existing data when uploading file',
                     filename=file.filename
                 )
             
             # Find actual column names with more comprehensive mapping
-            update_processing_status(4, '分析Excel列结构', '正在识别工单数据列...')
+            update_processing_status(4, 'Analyzing Excel column structure', 'Identifying ticket data columns...')
             possible_columns = {
                 'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id', 'Ticket', 'Ticket ID'],
                 'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date', 'Create Date'],
@@ -521,7 +524,7 @@ def upload_file():
                         break
             
             # Save each ticket to database
-            update_processing_status(5, '导入数据到数据库', '正在保存工单记录...')
+            update_processing_status(5, 'Importing data to database', 'Saving ticket records...')
             new_records_count = 0
             total_records = len(df)
             
@@ -586,14 +589,14 @@ def upload_file():
                 
                 # Update progress every 100 records
                 if index % 100 == 0:
-                    update_processing_status(5, '导入数据到数据库', 
-                                           f'已处理 {index + 1}/{total_records} 条记录 ({int((index + 1) / total_records * 100)}%)')
+                    update_processing_status(5, 'Importing data to database', 
+                                           f'Processed {index + 1}/{total_records} records ({int((index + 1) / total_records * 100)}%)')
             
             # Commit all database changes
-            update_processing_status(6, '提交数据库更改', '正在保存所有数据...')
+            update_processing_status(6, 'Committing database changes', 'Saving all data...')
             db.session.commit()
             
-            # 记录上传详情到upload_detail表
+            # Record upload details to upload_detail table
             import_mode = 'clear_existing' if clear_existing else 'incremental'
             upload_record = UploadDetail(
                 filename=file.filename,
@@ -604,10 +607,10 @@ def upload_file():
             db.session.commit()
             
             # Perform analysis directly from database using SQL queries
-            update_processing_status(7, '生成统计分析', '正在计算统计指标...')
+            update_processing_status(7, 'Generating statistical analysis', 'Calculating statistical metrics...')
             stats = analyze_otrs_tickets_direct_from_db()
             
-            # 记录统计查询结果到statistic表
+            # Record statistical query results to statistic table
             total_new = sum(stats.get('daily_new', {}).values()) if 'daily_new' in stats else 0
             total_closed = sum(stats.get('daily_closed', {}).values()) if 'daily_closed' in stats else 0
             
@@ -668,10 +671,10 @@ def export_excel():
             # Daily statistics sheet
             if 'daily_new' in stats and 'daily_closed' in stats:
                 daily_data = []
-                # 按日期升序排序进行计算（从最早开始）
+                # Sort dates in ascending order for calculation (starting from earliest)
                 all_dates_asc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
                 
-                # 按时间顺序计算累积Open Tickets（从最早日期开始）
+                # Calculate cumulative Open Tickets in chronological order (starting from earliest date)
                 cumulative_open = 0
                 daily_open_calculated = {}
                 for date in all_dates_asc:
@@ -680,7 +683,7 @@ def export_excel():
                     cumulative_open = cumulative_open + new_count - closed_count
                     daily_open_calculated[date] = cumulative_open
                 
-                # 按日期降序排序输出（最新日期在前）
+                # Sort dates in descending order for output (latest date first)
                 all_dates_desc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
                 
                 for date in all_dates_desc:
@@ -710,10 +713,10 @@ def export_excel():
             # Age segments
             if 'age_segments' in stats:
                 age_data = [
-                    {'Age Segment': '≤24小时', 'Count': stats['age_segments']['age_24h']},
-                    {'Age Segment': '24-48小时', 'Count': stats['age_segments']['age_24_48h']},
-                    {'Age Segment': '48-72小时', 'Count': stats['age_segments']['age_48_72h']},
-                    {'Age Segment': '>72小时', 'Count': stats['age_segments']['age_72h']}
+                    {'Age Segment': '≤24 hours', 'Count': stats['age_segments']['age_24h']},
+                    {'Age Segment': '24-48 hours', 'Count': stats['age_segments']['age_24_48h']},
+                    {'Age Segment': '48-72 hours', 'Count': stats['age_segments']['age_48_72h']},
+                    {'Age Segment': '>72 hours', 'Count': stats['age_segments']['age_72h']}
                 ]
                 pd.DataFrame(age_data).to_excel(writer, sheet_name='Age Segments', index=False)
             
@@ -835,10 +838,10 @@ def export_excel():
         output.seek(0)
         filename = f"otrs_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         
-        # 记录统计查询结果到statistic表
+        # Record statistical query results to statistic table
         statistic_record = Statistic(
             query_type='export_excel',
-            record_count=1  # 导出操作记录为1次
+            record_count=1  # Export operation recorded as 1 time
         )
         db.session.add(statistic_record)
         db.session.commit()
@@ -906,7 +909,7 @@ def get_age_details():
                     }
                     details.append(detail)
         
-        # 记录统计查询结果到statistic表
+        # Record statistical query results to statistic table
         statistic_record = Statistic(
             query_type='age_details',
             age_segment=age_segment,
@@ -948,7 +951,7 @@ def get_empty_firstresponse_details():
             }
             details.append(detail)
         
-        # 记录统计查询结果到statistic表
+        # Record statistical query results to statistic table
         statistic_record = Statistic(
             query_type='empty_firstresponse',
             record_count=len(details)
@@ -997,10 +1000,10 @@ def export_txt():
             content.append("Date\t\tNew\tClosed\tOpen")
             content.append("-" * 30)
             
-            # 按日期升序排序进行计算（从最早开始）
+            # Sort dates in ascending order for calculation (starting from earliest)
             all_dates_asc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
             
-            # 按时间顺序计算累积Open Tickets（从最早日期开始）
+            # Calculate cumulative Open Tickets in chronological order (starting from earliest date)
             cumulative_open = 0
             daily_open_calculated = {}
             for date in all_dates_asc:
@@ -1009,7 +1012,7 @@ def export_txt():
                 cumulative_open = cumulative_open + new_count - closed_count
                 daily_open_calculated[date] = cumulative_open
             
-            # 按日期降序排序输出（最新日期在前）
+            # Sort dates in descending order for output (latest date first)
             all_dates_desc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
             
             for date in all_dates_desc:
@@ -1045,12 +1048,12 @@ def export_txt():
         
         # Age segments
         if 'age_segments' in stats:
-            content.append("OPEN工单AGE分段统计")
+            content.append("OPEN TICKETS AGE SEGMENT STATISTICS")
             content.append("-" * 30)
-            content.append(f"≤24小时: {stats['age_segments']['age_24h']}")
-            content.append(f"24-48小时: {stats['age_segments']['age_24_48h']}")
-            content.append(f"48-72小时: {stats['age_segments']['age_48_72h']}")
-            content.append(f">72小时: {stats['age_segments']['age_72h']}")
+            content.append(f"≤24 hours: {stats['age_segments']['age_24h']}")
+            content.append(f"24-48 hours: {stats['age_segments']['age_24_48h']}")
+            content.append(f"48-72 hours: {stats['age_segments']['age_48_72h']}")
+            content.append(f">72 hours: {stats['age_segments']['age_72h']}")
             content.append("")
         
         # Add age details and empty first response details
@@ -1100,15 +1103,15 @@ def export_txt():
                 
                 # Age segments details
                 age_segments_details = {
-                    '≤24小时': open_tickets[open_tickets['age_hours'] <= 24],
-                    '24-48小时': open_tickets[(open_tickets['age_hours'] > 24) & (open_tickets['age_hours'] <= 48)],
-                    '48-72小时': open_tickets[(open_tickets['age_hours'] > 48) & (open_tickets['age_hours'] <= 72)],
-                    '>72小时': open_tickets[open_tickets['age_hours'] > 72]
+                    '≤24 hours': open_tickets[open_tickets['age_hours'] <= 24],
+                    '24-48 hours': open_tickets[(open_tickets['age_hours'] > 24) & (open_tickets['age_hours'] <= 48)],
+                    '48-72 hours': open_tickets[(open_tickets['age_hours'] > 48) & (open_tickets['age_hours'] <= 72)],
+                    '>72 hours': open_tickets[open_tickets['age_hours'] > 72]
                 }
                 
                 for segment_name, segment_data in age_segments_details.items():
                     if not segment_data.empty:
-                        content.append(f"{segment_name}工单明细")
+                        content.append(f"{segment_name} Ticket Details")
                         content.append("-" * 30)
                         content.append("Ticket Number\tAge\tCreated\tPriority")
                         content.append("-" * 30)
@@ -1136,7 +1139,7 @@ def export_txt():
                         empty_firstresponse = df[nan_empty | empty_strings | nan_strings]
                     
                     if not empty_firstresponse.empty:
-                        content.append("空FirstResponse工单明细")
+                        content.append("Empty FirstResponse Ticket Details")
                         content.append("-" * 30)
                         content.append("Ticket Number\tAge\tCreated\tPriority")
                         content.append("-" * 30)
@@ -1157,10 +1160,10 @@ def export_txt():
         
         filename = f"otrs_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         
-        # 记录统计查询结果到statistic表
+        # Record statistical query results to statistic table
         statistic_record = Statistic(
             query_type='export_txt',
-            record_count=1  # 导出操作记录为1次
+            record_count=1  # Export operation recorded as 1 time
         )
         db.session.add(statistic_record)
         db.session.commit()
@@ -1179,32 +1182,32 @@ def export_txt():
 def clear_database():
     """Clear all data from OTRS tickets table"""
     try:
-        # 获取当前记录数
+        # Get current record count
         record_count = OtrsTicket.query.count()
         
         if record_count == 0:
             return jsonify({
                 'success': True,
-                'message': '数据库已经是空的，无需清理',
+                'message': 'Database is already empty, no need to clear',
                 'records_cleared': 0
             })
         
-        # 删除所有记录
+        # Delete all records
         OtrsTicket.query.delete()
         db.session.commit()
         
-        # 记录数据库操作日志
+        # Log database operation
         log_database_operation(
             operation_type='clear_tickets',
             table_name='otrs_ticket',
             records_affected=record_count,
-            operation_details='用户手动清除了所有工单数据',
+            operation_details='User manually cleared all ticket data',
             filename='manual_clear'
         )
         
         return jsonify({
             'success': True,
-            'message': f'成功清除了 {record_count} 条工单记录',
+            'message': f'Successfully cleared {record_count} ticket records',
             'records_cleared': record_count
         })
         
@@ -1212,7 +1215,7 @@ def clear_database():
         db.session.rollback()
         return jsonify({
             'success': False,
-            'error': f'清除数据库时发生错误: {str(e)}'
+            'error': f'Error clearing database: {str(e)}'
         }), 500
 
 @app.route('/progress')
