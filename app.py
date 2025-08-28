@@ -147,6 +147,104 @@ def analyze_otrs_tickets_from_db():
         'age': 'Age'
     })
 
+def analyze_otrs_tickets_direct_from_db():
+    """Main function for OTRS ticket data analysis directly from database using SQL queries"""
+    stats = {}
+    
+    # Total records
+    total_records = OtrsTicket.query.count()
+    stats['total_records'] = total_records
+    
+    if total_records == 0:
+        return stats
+    
+    # Current open tickets (where closed_date is NULL)
+    current_open_count = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).count()
+    stats['current_open_count'] = current_open_count
+    
+    # Empty first response (where first_response is NULL or empty, and state is not Closed/Resolved)
+    empty_firstresponse_count = OtrsTicket.query.filter(
+        (OtrsTicket.first_response.is_(None) | 
+         (OtrsTicket.first_response == '') |
+         (OtrsTicket.first_response == 'nan') |
+         (OtrsTicket.first_response == 'NaN')),
+        ~OtrsTicket.state.in_(['Closed', 'Resolved'])
+    ).count()
+    stats['empty_firstresponse_count'] = empty_firstresponse_count
+    
+    # Daily new tickets count
+    daily_new = db.session.query(
+        db.func.date(OtrsTicket.created_date).label('date'),
+        db.func.count(OtrsTicket.id).label('count')
+    ).filter(OtrsTicket.created_date.isnot(None)).group_by(db.func.date(OtrsTicket.created_date)).all()
+    
+    stats['daily_new'] = {str(record.date): record.count for record in daily_new}
+    
+    # Daily closed tickets count
+    daily_closed = db.session.query(
+        db.func.date(OtrsTicket.closed_date).label('date'),
+        db.func.count(OtrsTicket.id).label('count')
+    ).filter(OtrsTicket.closed_date.isnot(None)).group_by(db.func.date(OtrsTicket.closed_date)).all()
+    
+    stats['daily_closed'] = {str(record.date): record.count for record in daily_closed}
+    
+    # Calculate cumulative open tickets
+    if stats['daily_new'] and stats['daily_closed']:
+        daily_open = {}
+        cumulative_open = 0
+        
+        # Get all dates and sort them
+        all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
+        
+        for date in all_dates:
+            new_count = stats['daily_new'].get(date, 0)
+            closed_count = stats['daily_closed'].get(date, 0)
+            cumulative_open = cumulative_open + new_count - closed_count
+            daily_open[date] = cumulative_open
+        
+        stats['daily_open'] = daily_open
+    
+    # Priority distribution
+    priority_distribution = db.session.query(
+        OtrsTicket.priority,
+        db.func.count(OtrsTicket.id).label('count')
+    ).filter(OtrsTicket.priority.isnot(None)).group_by(OtrsTicket.priority).all()
+    
+    stats['priority_distribution'] = {record.priority: record.count for record in priority_distribution}
+    
+    # State distribution
+    state_distribution = db.session.query(
+        OtrsTicket.state,
+        db.func.count(OtrsTicket.id).label('count')
+    ).filter(OtrsTicket.state.isnot(None)).group_by(OtrsTicket.state).all()
+    
+    stats['state_distribution'] = {record.state: record.count for record in state_distribution}
+    
+    # Age segments for open tickets
+    open_tickets = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).all()
+    
+    age_segments = {
+        'age_24h': 0,
+        'age_24_48h': 0,
+        'age_48_72h': 0,
+        'age_72h': 0
+    }
+    
+    for ticket in open_tickets:
+        if ticket.age_hours is not None:
+            if ticket.age_hours <= 24:
+                age_segments['age_24h'] += 1
+            elif ticket.age_hours <= 48:
+                age_segments['age_24_48h'] += 1
+            elif ticket.age_hours <= 72:
+                age_segments['age_48_72h'] += 1
+            else:
+                age_segments['age_72h'] += 1
+    
+    stats['age_segments'] = age_segments
+    
+    return stats
+
 def analyze_ticket_statistics(df, columns):
     """Perform ticket statistical analysis"""
     stats = {}
@@ -425,8 +523,8 @@ def upload_file():
             db.session.add(upload_record)
             db.session.commit()
             
-            # Perform analysis from database
-            stats = analyze_otrs_tickets_from_db()
+            # Perform analysis directly from database using SQL queries
+            stats = analyze_otrs_tickets_direct_from_db()
             
             # 记录统计查询结果到statistic表
             total_new = sum(stats.get('daily_new', {}).values()) if 'daily_new' in stats else 0
