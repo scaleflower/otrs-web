@@ -188,12 +188,88 @@ body {
 }
 
 .loading-card h3 {
-    margin-bottom: 10px;
+    margin-bottom: 20px;
     color: #2c3e50;
 }
 
-.loading-card p {
+/* Progress Bar Styles */
+.progress-container {
+    margin: 25px 0;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 12px;
+    background: #e9ecef;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #28a745, #20c997);
+    border-radius: 6px;
+    transition: width 0.3s ease;
+    box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
+}
+
+.progress-text {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #28a745;
+    margin-bottom: 20px;
+}
+
+/* Status Messages */
+.status-messages {
+    text-align: left;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+.status-message {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    padding: 10px;
+    background: white;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.status-details {
+    font-size: 0.9rem;
     color: #6c757d;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border-left: 3px solid #6c757d;
+    margin-top: 5px;
+    line-height: 1.4;
+}
+
+.status-message.success {
+    color: #155724;
+    background: #d4edda;
+    border-left-color: #28a745;
+}
+
+.status-message.warning {
+    color: #856404;
+    background: #fff3cd;
+    border-left-color: #ffc107;
+}
+
+.status-message.info {
+    color: #0c5460;
+    background: #d1ecf1;
+    border-left-color: #17a2b8;
 }
 
 /* Results Section */
@@ -845,6 +921,57 @@ body {
     .empty-state h3 {
         font-size: 1.3rem;
     }
+}
+
+/* Database Management Styles */
+.database-management {
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #e9ecef;
+    text-align: center;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+    padding: 12px 25px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+    transform: translateY(-1px);
+}
+
+.btn-danger i {
+    margin-right: 8px;
+}
+
+.clear-status {
+    margin-top: 15px;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 500;
+    text-align: center;
+    display: none;
+}
+
+.clear-status.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.clear-status.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
 }
 
 /* Utility Classes */

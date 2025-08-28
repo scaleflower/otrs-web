@@ -31,6 +31,48 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 # 全局变量存储上传的数据
 uploaded_data = {}
 
+# 全局变量存储处理进度
+processing_status = {
+    'current_step': 0,
+    'total_steps': 7,
+    'message': '',
+    'details': ''
+}
+
+def update_processing_status(step, message, details=''):
+    """更新处理状态"""
+    global processing_status
+    processing_status['current_step'] = step
+    processing_status['message'] = message
+    processing_status['details'] = details
+    print(f"Step {step}/{processing_status['total_steps']}: {message} - {details}")
+
+def log_database_operation(operation_type, table_name, records_affected=0, operation_details='', filename=''):
+    """记录数据库操作到日志表"""
+    try:
+        # 获取用户信息（IP地址）
+        user_ip = request.remote_addr if request else 'unknown'
+        user_agent = request.headers.get('User-Agent', 'unknown') if request else 'unknown'
+        user_info = f"IP: {user_ip}, Browser: {user_agent[:100]}"
+        
+        # 创建日志记录
+        log_entry = DatabaseLog(
+            operation_type=operation_type,
+            table_name=table_name,
+            records_affected=records_affected,
+            operation_details=operation_details,
+            user_info=user_info,
+            filename=filename
+        )
+        
+        db.session.add(log_entry)
+        db.session.commit()
+        print(f"Database operation logged: {operation_type} on {table_name}, affected {records_affected} records")
+        
+    except Exception as e:
+        print(f"Error logging database operation: {str(e)}")
+        db.session.rollback()
+
 # 数据库模型
 class OtrsTicket(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -83,6 +125,18 @@ class Statistic(db.Model):
     record_count = db.Column(db.Integer)  # 查询结果记录数
     upload_id = db.Column(db.Integer, db.ForeignKey('upload_detail.id'))
     upload = db.relationship('UploadDetail', backref=db.backref('statistics', lazy=True))
+
+
+# 数据库操作日志表
+class DatabaseLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    operation_time = db.Column(db.DateTime, default=datetime.utcnow)
+    operation_type = db.Column(db.String(50))  # 操作类型：clear_tickets, upload, delete, update, etc.
+    table_name = db.Column(db.String(50))  # 操作的表名
+    records_affected = db.Column(db.Integer)  # 影响的记录数
+    operation_details = db.Column(db.Text)  # 操作详情
+    user_info = db.Column(db.String(255))  # 用户信息（IP、浏览器等）
+    filename = db.Column(db.String(255))  # 相关文件名（如果有）
 
 # 创建数据库表
 with app.app_context():
@@ -414,15 +468,32 @@ def upload_file():
     
     if file and file.filename.endswith(('.xlsx', '.xls')):
         try:
+            # Step 1: 开始处理文件
+            update_processing_status(1, '开始处理Excel文件', '正在读取文件...')
+            
             # Read Excel file
             df = pd.read_excel(file)
+            update_processing_status(2, 'Excel文件读取完成', f'共找到 {len(df)} 条记录')
             
             # Clear existing data if requested
             if clear_existing:
+                update_processing_status(3, '清理现有数据', '正在删除数据库中的旧记录...')
+                # 获取当前记录数用于日志记录
+                existing_record_count = OtrsTicket.query.count()
                 OtrsTicket.query.delete()
                 print(f"Cleared existing data, importing {len(df)} new records")
+                
+                # 记录数据库操作日志
+                log_database_operation(
+                    operation_type='clear_tickets',
+                    table_name='otrs_ticket',
+                    records_affected=existing_record_count,
+                    operation_details='上传文件时清除了现有数据',
+                    filename=file.filename
+                )
             
             # Find actual column names with more comprehensive mapping
+            update_processing_status(4, '分析Excel列结构', '正在识别工单数据列...')
             possible_columns = {
                 'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id', 'Ticket', 'Ticket ID'],
                 'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date', 'Create Date'],
@@ -450,8 +521,11 @@ def upload_file():
                         break
             
             # Save each ticket to database
+            update_processing_status(5, '导入数据到数据库', '正在保存工单记录...')
             new_records_count = 0
-            for _, row in df.iterrows():
+            total_records = len(df)
+            
+            for index, (_, row) in enumerate(df.iterrows()):
                 # Parse dates
                 created_date = None
                 closed_date = None
@@ -509,8 +583,14 @@ def upload_file():
                 )
                 db.session.add(ticket)
                 new_records_count += 1
+                
+                # Update progress every 100 records
+                if index % 100 == 0:
+                    update_processing_status(5, '导入数据到数据库', 
+                                           f'已处理 {index + 1}/{total_records} 条记录 ({int((index + 1) / total_records * 100)}%)')
             
             # Commit all database changes
+            update_processing_status(6, '提交数据库更改', '正在保存所有数据...')
             db.session.commit()
             
             # 记录上传详情到upload_detail表
@@ -524,6 +604,7 @@ def upload_file():
             db.session.commit()
             
             # Perform analysis directly from database using SQL queries
+            update_processing_status(7, '生成统计分析', '正在计算统计指标...')
             stats = analyze_otrs_tickets_direct_from_db()
             
             # 记录统计查询结果到statistic表
@@ -1093,6 +1174,51 @@ def export_txt():
         
     except Exception as e:
         return jsonify({'error': f'Error exporting text: {str(e)}'}), 500
+
+@app.route('/clear-database', methods=['POST'])
+def clear_database():
+    """Clear all data from OTRS tickets table"""
+    try:
+        # 获取当前记录数
+        record_count = OtrsTicket.query.count()
+        
+        if record_count == 0:
+            return jsonify({
+                'success': True,
+                'message': '数据库已经是空的，无需清理',
+                'records_cleared': 0
+            })
+        
+        # 删除所有记录
+        OtrsTicket.query.delete()
+        db.session.commit()
+        
+        # 记录数据库操作日志
+        log_database_operation(
+            operation_type='clear_tickets',
+            table_name='otrs_ticket',
+            records_affected=record_count,
+            operation_details='用户手动清除了所有工单数据',
+            filename='manual_clear'
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功清除了 {record_count} 条工单记录',
+            'records_cleared': record_count
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'清除数据库时发生错误: {str(e)}'
+        }), 500
+
+@app.route('/progress')
+def get_progress():
+    """Get current processing progress status"""
+    return jsonify(processing_status)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

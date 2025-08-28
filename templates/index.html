@@ -47,6 +47,15 @@
                         <i class="fas fa-check-circle"></i>
                         <span id="fileName"></span>
                     </div>
+                    
+                    <!-- 清除数据库按钮 -->
+                    <div class="database-management">
+                        <button id="clearDatabaseBtn" class="btn btn-danger">
+                            <i class="fas fa-trash-alt"></i>
+                            清除数据库
+                        </button>
+                        <div id="clearStatus" class="clear-status" style="display: none;"></div>
+                    </div>
                 </div>
             </section>
 
@@ -54,8 +63,17 @@
             <section id="loadingSection" class="loading-section" style="display: none;">
                 <div class="loading-card">
                     <div class="spinner"></div>
-                    <h3>Analyzing Data...</h3>
-                    <p>Please wait while we process your Excel file</p>
+                    <h3>Processing Excel File...</h3>
+                    <div id="progressContainer" class="progress-container">
+                        <div class="progress-bar">
+                            <div id="progressBar" class="progress-bar-fill" style="width: 0%"></div>
+                        </div>
+                        <div id="progressText" class="progress-text">0%</div>
+                    </div>
+                    <div id="statusMessages" class="status-messages">
+                        <div id="currentStatus" class="status-message">Initializing...</div>
+                        <div id="statusDetails" class="status-details"></div>
+                    </div>
                 </div>
             </section>
 
