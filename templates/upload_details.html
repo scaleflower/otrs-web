@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Details - OTRS Ticket Analysis System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-file-excel"></i> Upload Details</h1>
+                <p>Detailed view of uploaded Excel file data</p>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="nav">
+            <a href="/" class="nav-link"><i class="fas fa-home"></i> Home</a>
+            <a href="/uploads" class="nav-link"><i class="fas fa-database"></i> Uploads</a>
+            <span class="nav-link active"><i class="fas fa-file-excel"></i> {{ upload_session.filename }}</span>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Session Info -->
+            <div class="session-info-card">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>Filename:</label>
+                        <span>{{ upload_session.filename }}</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Upload Time:</label>
+                        <span>{{ upload_session.upload_time.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Total Records:</label>
+                        <span>{{ upload_session.total_records }}</span>
+                    </div>
+                    <div class="info-item">
+                        <label>Session ID:</label>
+                        <span>{{ upload_session.session_id }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tickets Table -->
+            <div class="tickets-section">
+                <h2>Tickets Data ({{ tickets|length }} records)</h2>
+                
+                {% if tickets %}
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Ticket Number</th>
+                                <th>Created Date</th>
+                                <th>Closed Date</th>
+                                <th>State</th>
+                                <th>Priority</th>
+                                <th>Age</th>
+                                <th>First Response</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ticket in tickets %}
+                            <tr>
+                                <td>{{ ticket.ticket_number or 'N/A' }}</td>
+                                <td>{{ ticket.created_date.strftime('%Y-%m-%d %H:%M') if ticket.created_date else 'N/A' }}</td>
+                                <td>{{ ticket.closed_date.strftime('%Y-%m-%d %H:%M') if ticket.closed_date else 'N/A' }}</td>
+                                <td>{{ ticket.state or 'N/A' }}</td>
+                                <td>{{ ticket.priority or 'N/A' }}</td>
+                                <td>{{ ticket.age or 'N/A' }}</td>
+                                <td>{{ ticket.first_response or 'N/A' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon">
+                        <i class="fas fa-table"></i>
+                    </div>
+                    <h3>No Ticket Data</h3>
+                    <p>No ticket data found for this upload session.</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Actions -->
+            <div class="actions-section">
+                <h2>Actions</h2>
+                <div class="action-buttons">
+                    <a href="/uploads" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Uploads
+                    </a>
+                    <a href="/" class="btn btn-primary">
+                        <i class="fas fa-cloud-upload-alt"></i> Upload New File
+                    </a>
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2025 OTRS Ticket Analysis System | Built with Flask and SQLite</p>
+        </footer>
+    </div>
+</body>
+</html>

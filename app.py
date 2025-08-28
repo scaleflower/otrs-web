@@ -4,6 +4,7 @@ OTRS Ticket Analysis Web Application
 """
 
 from flask import Flask, render_template, request, send_file, jsonify
+from flask_sqlalchemy import SQLAlchemy
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -18,12 +19,128 @@ matplotlib.use('Agg')  # 使用非交互式后端
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///otrs_data.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# 初始化数据库
+db = SQLAlchemy(app)
 
 # 确保上传目录存在
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # 全局变量存储上传的数据
 uploaded_data = {}
+
+# 全局变量存储处理进度
+processing_status = {
+    'current_step': 0,
+    'total_steps': 7,
+    'message': '',
+    'details': ''
+}
+
+def update_processing_status(step, message, details=''):
+    """更新处理状态"""
+    global processing_status
+    processing_status['current_step'] = step
+    processing_status['message'] = message
+    processing_status['details'] = details
+    print(f"Step {step}/{processing_status['total_steps']}: {message} - {details}")
+
+def log_database_operation(operation_type, table_name, records_affected=0, operation_details='', filename=''):
+    """记录数据库操作到日志表"""
+    try:
+        # 获取用户信息（IP地址）
+        user_ip = request.remote_addr if request else 'unknown'
+        user_agent = request.headers.get('User-Agent', 'unknown') if request else 'unknown'
+        user_info = f"IP: {user_ip}, Browser: {user_agent[:100]}"
+        
+        # 创建日志记录
+        log_entry = DatabaseLog(
+            operation_type=operation_type,
+            table_name=table_name,
+            records_affected=records_affected,
+            operation_details=operation_details,
+            user_info=user_info,
+            filename=filename
+        )
+        
+        db.session.add(log_entry)
+        db.session.commit()
+        print(f"Database operation logged: {operation_type} on {table_name}, affected {records_affected} records")
+        
+    except Exception as e:
+        print(f"Error logging database operation: {str(e)}")
+        db.session.rollback()
+
+# 数据库模型
+class OtrsTicket(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_number = db.Column(db.String(100), unique=True, nullable=False)
+    created_date = db.Column(db.DateTime)
+    closed_date = db.Column(db.DateTime)
+    state = db.Column(db.String(100))
+    priority = db.Column(db.String(50))
+    first_response = db.Column(db.String(255))
+    age = db.Column(db.String(50))
+    age_hours = db.Column(db.Float)
+    
+    # Excel中的其他常见字段
+    queue = db.Column(db.String(255))
+    owner = db.Column(db.String(255))
+    customer_id = db.Column(db.String(255))
+    customer_realname = db.Column(db.String(255))
+    title = db.Column(db.Text)
+    service = db.Column(db.String(255))
+    type = db.Column(db.String(100))
+    category = db.Column(db.String(255))
+    sub_category = db.Column(db.String(255))
+    
+    # 元数据
+    import_time = db.Column(db.DateTime, default=datetime.utcnow)
+    data_source = db.Column(db.String(255))  # 原始文件名
+    raw_data = db.Column(db.Text)  # 存储完整的原始JSON数据
+
+
+# 上传记录表
+class UploadDetail(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    upload_time = db.Column(db.DateTime, default=datetime.utcnow)
+    record_count = db.Column(db.Integer, nullable=False)
+    import_mode = db.Column(db.String(50))  # 导入模式：clear_existing 或 incremental
+
+
+# 统计查询记录表
+class Statistic(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    query_time = db.Column(db.DateTime, default=datetime.utcnow)
+    query_type = db.Column(db.String(50))  # 查询类型：main_analysis, age_details, empty_firstresponse, export_excel, export_txt
+    total_records = db.Column(db.Integer)
+    current_open_count = db.Column(db.Integer)
+    empty_firstresponse_count = db.Column(db.Integer)
+    daily_new_count = db.Column(db.Integer)  # 总的新增工单数
+    daily_closed_count = db.Column(db.Integer)  # 总的关闭工单数
+    age_segment = db.Column(db.String(50))  # 年龄分段（仅用于age_details查询）
+    record_count = db.Column(db.Integer)  # 查询结果记录数
+    upload_id = db.Column(db.Integer, db.ForeignKey('upload_detail.id'))
+    upload = db.relationship('UploadDetail', backref=db.backref('statistics', lazy=True))
+
+
+# 数据库操作日志表
+class DatabaseLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    operation_time = db.Column(db.DateTime, default=datetime.utcnow)
+    operation_type = db.Column(db.String(50))  # 操作类型：clear_tickets, upload, delete, update, etc.
+    table_name = db.Column(db.String(50))  # 操作的表名
+    records_affected = db.Column(db.Integer)  # 影响的记录数
+    operation_details = db.Column(db.Text)  # 操作详情
+    user_info = db.Column(db.String(255))  # 用户信息（IP、浏览器等）
+    filename = db.Column(db.String(255))  # 相关文件名（如果有）
+
+# 创建数据库表
+with app.app_context():
+    db.create_all()
 
 def parse_age_to_hours(age_str):
     """Parse Age string to total hours"""
@@ -49,28 +166,138 @@ def parse_age_to_hours(age_str):
     
     return (days * 24) + hours + (minutes / 60)
 
-def analyze_otrs_tickets(df):
-    """Main function for OTRS ticket data analysis"""
-    # Check for common OTRS column name variants
-    possible_columns = {
-        'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
-        'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date'],
-        'state': ['State', 'Status', 'Ticket State', 'state', 'status'],
-        'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
-        'priority': ['Priority', 'priority'],
-        'firstresponse': ['FirstResponse', 'First Response', 'firstresponse']
+def analyze_otrs_tickets_from_db():
+    """Main function for OTRS ticket data analysis from database"""
+    # Get all tickets from database
+    tickets = OtrsTicket.query.all()
+    
+    if not tickets:
+        return {}
+    
+    # Convert tickets to DataFrame for analysis
+    ticket_data = []
+    for ticket in tickets:
+        ticket_data.append({
+            'TicketNumber': ticket.ticket_number,
+            'Created': ticket.created_date,
+            'Closed': ticket.closed_date,
+            'State': ticket.state,
+            'Priority': ticket.priority,
+            'FirstResponse': ticket.first_response,
+            'Age': ticket.age,
+            'AgeHours': ticket.age_hours
+        })
+    
+    df = pd.DataFrame(ticket_data)
+    
+    # Execute ticket statistical analysis
+    return analyze_ticket_statistics(df, {
+        'ticket_number': 'TicketNumber',
+        'created': 'Created',
+        'closed': 'Closed',
+        'state': 'State',
+        'priority': 'Priority',
+        'firstresponse': 'FirstResponse',
+        'age': 'Age'
+    })
+
+def analyze_otrs_tickets_direct_from_db():
+    """Main function for OTRS ticket data analysis directly from database using SQL queries"""
+    stats = {}
+    
+    # Total records
+    total_records = OtrsTicket.query.count()
+    stats['total_records'] = total_records
+    
+    if total_records == 0:
+        return stats
+    
+    # Current open tickets (where closed_date is NULL)
+    current_open_count = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).count()
+    stats['current_open_count'] = current_open_count
+    
+    # Empty first response (where first_response is NULL or empty, and state is not Closed/Resolved)
+    empty_firstresponse_count = OtrsTicket.query.filter(
+        (OtrsTicket.first_response.is_(None) | 
+         (OtrsTicket.first_response == '') |
+         (OtrsTicket.first_response == 'nan') |
+         (OtrsTicket.first_response == 'NaN')),
+        ~OtrsTicket.state.in_(['Closed', 'Resolved'])
+    ).count()
+    stats['empty_firstresponse_count'] = empty_firstresponse_count
+    
+    # Daily new tickets count
+    daily_new = db.session.query(
+        db.func.date(OtrsTicket.created_date).label('date'),
+        db.func.count(OtrsTicket.id).label('count')
+    ).filter(OtrsTicket.created_date.isnot(None)).group_by(db.func.date(OtrsTicket.created_date)).all()
+    
+    stats['daily_new'] = {str(record.date): record.count for record in daily_new}
+    
+    # Daily closed tickets count
+    daily_closed = db.session.query(
+        db.func.date(OtrsTicket.closed_date).label('date'),
+        db.func.count(OtrsTicket.id).label('count')
+    ).filter(OtrsTicket.closed_date.isnot(None)).group_by(db.func.date(OtrsTicket.closed_date)).all()
+    
+    stats['daily_closed'] = {str(record.date): record.count for record in daily_closed}
+    
+    # Calculate cumulative open tickets
+    if stats['daily_new'] and stats['daily_closed']:
+        daily_open = {}
+        cumulative_open = 0
+        
+        # Get all dates and sort them
+        all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
+        
+        for date in all_dates:
+            new_count = stats['daily_new'].get(date, 0)
+            closed_count = stats['daily_closed'].get(date, 0)
+            cumulative_open = cumulative_open + new_count - closed_count
+            daily_open[date] = cumulative_open
+        
+        stats['daily_open'] = daily_open
+    
+    # Priority distribution
+    priority_distribution = db.session.query(
+        OtrsTicket.priority,
+        db.func.count(OtrsTicket.id).label('count')
+    ).filter(OtrsTicket.priority.isnot(None)).group_by(OtrsTicket.priority).all()
+    
+    stats['priority_distribution'] = {record.priority: record.count for record in priority_distribution}
+    
+    # State distribution
+    state_distribution = db.session.query(
+        OtrsTicket.state,
+        db.func.count(OtrsTicket.id).label('count')
+    ).filter(OtrsTicket.state.isnot(None)).group_by(OtrsTicket.state).all()
+    
+    stats['state_distribution'] = {record.state: record.count for record in state_distribution}
+    
+    # Age segments for open tickets
+    open_tickets = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).all()
+    
+    age_segments = {
+        'age_24h': 0,
+        'age_24_48h': 0,
+        'age_48_72h': 0,
+        'age_72h': 0
     }
     
-    # Find actual column names using case-insensitive matching
-    actual_columns = {}
-    for key, possible_names in possible_columns.items():
-        for col in df.columns:
-            if any(name.lower() in col.lower() for name in possible_names):
-                actual_columns[key] = col
-                break
+    for ticket in open_tickets:
+        if ticket.age_hours is not None:
+            if ticket.age_hours <= 24:
+                age_segments['age_24h'] += 1
+            elif ticket.age_hours <= 48:
+                age_segments['age_24_48h'] += 1
+            elif ticket.age_hours <= 72:
+                age_segments['age_48_72h'] += 1
+            else:
+                age_segments['age_72h'] += 1
     
-    # Execute ticket statistical analysis with identified columns
-    return analyze_ticket_statistics(df, actual_columns)
+    stats['age_segments'] = age_segments
+    
+    return stats
 
 def analyze_ticket_statistics(df, columns):
     """Perform ticket statistical analysis"""
@@ -122,25 +349,26 @@ def analyze_ticket_statistics(df, columns):
         priority_counts = df[columns['priority']].value_counts().to_dict()
         stats['priority_distribution'] = priority_counts
     
-    # FirstResponse empty analysis - exclude Closed and Resolved states
-    if 'firstresponse' in columns:
-        firstresponse_col = columns['firstresponse']
-        nan_empty = df[firstresponse_col].isna()
-        empty_strings = df[firstresponse_col] == ''
-        
-        # Exclude Closed and Resolved states
-        if 'state' in columns:
-            # Filter out Closed and Resolved states
-            not_closed_resolved = ~df[columns['state']].isin(['Closed', 'Resolved'])
-            empty_firstresponse = df[(nan_empty | empty_strings) & not_closed_resolved]
-        else:
-            empty_firstresponse = df[nan_empty | empty_strings]
+        # FirstResponse empty analysis - exclude Closed and Resolved states
+        if 'firstresponse' in columns:
+            firstresponse_col = columns['firstresponse']
+            nan_empty = df[firstresponse_col].isna()
+            empty_strings = df[firstresponse_col] == ''
+            nan_strings = df[firstresponse_col].astype(str).str.lower() == 'nan'
             
-        stats['empty_firstresponse_count'] = len(empty_firstresponse)
-        
-        if 'priority' in columns:
-            priority_empty_counts = empty_firstresponse[columns['priority']].value_counts().to_dict()
-            stats['empty_firstresponse_by_priority'] = priority_empty_counts
+            # Exclude Closed and Resolved states
+            if 'state' in columns:
+                # Filter out Closed and Resolved states
+                not_closed_resolved = ~df[columns['state']].isin(['Closed', 'Resolved'])
+                empty_firstresponse = df[(nan_empty | empty_strings | nan_strings) & not_closed_resolved]
+            else:
+                empty_firstresponse = df[nan_empty | empty_strings | nan_strings]
+                
+            stats['empty_firstresponse_count'] = len(empty_firstresponse)
+            
+            if 'priority' in columns:
+                priority_empty_counts = empty_firstresponse[columns['priority']].value_counts().to_dict()
+                stats['empty_firstresponse_by_priority'] = priority_empty_counts
     
     # Age analysis if Age column exists
     if 'Age' in df.columns:
@@ -213,6 +441,18 @@ def index():
     """Main page"""
     return render_template('index.html')
 
+@app.route('/uploads')
+def view_uploads():
+    """View all uploaded data sources"""
+    data_sources = OtrsTicket.query.with_entities(OtrsTicket.data_source, db.func.count(OtrsTicket.id)).group_by(OtrsTicket.data_source).all()
+    return render_template('uploads.html', data_sources=data_sources)
+
+@app.route('/upload/<filename>')
+def view_upload_details(filename):
+    """View details of a specific upload file"""
+    tickets = OtrsTicket.query.filter_by(data_source=filename).all()
+    return render_template('upload_details.html', filename=filename, tickets=tickets)
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Handle file upload and analysis"""
@@ -223,29 +463,179 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
     
+    # Get clear existing option from form data
+    clear_existing = request.form.get('clear_existing', 'false').lower() == 'true'
+    
     if file and file.filename.endswith(('.xlsx', '.xls')):
         try:
+            # Step 1: 开始处理文件
+            update_processing_status(1, '开始处理Excel文件', '正在读取文件...')
+            
             # Read Excel file
             df = pd.read_excel(file)
+            update_processing_status(2, 'Excel文件读取完成', f'共找到 {len(df)} 条记录')
             
-            # Store the uploaded data
-            session_id = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-            uploaded_data[session_id] = df
+            # Clear existing data if requested
+            if clear_existing:
+                update_processing_status(3, '清理现有数据', '正在删除数据库中的旧记录...')
+                # 获取当前记录数用于日志记录
+                existing_record_count = OtrsTicket.query.count()
+                OtrsTicket.query.delete()
+                print(f"Cleared existing data, importing {len(df)} new records")
+                
+                # 记录数据库操作日志
+                log_database_operation(
+                    operation_type='clear_tickets',
+                    table_name='otrs_ticket',
+                    records_affected=existing_record_count,
+                    operation_details='上传文件时清除了现有数据',
+                    filename=file.filename
+                )
             
-            # Perform analysis
-            stats = analyze_otrs_tickets(df)
+            # Find actual column names with more comprehensive mapping
+            update_processing_status(4, '分析Excel列结构', '正在识别工单数据列...')
+            possible_columns = {
+                'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id', 'Ticket', 'Ticket ID'],
+                'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date', 'Create Date'],
+                'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date', 'Close Date'],
+                'state': ['State', 'Status', 'Ticket State', 'state', 'status', 'Ticket Status'],
+                'priority': ['Priority', 'priority', 'Ticket Priority'],
+                'firstresponse': ['FirstResponse', 'First Response', 'firstresponse', 'First Reply', 'First Reply Time'],
+                'age': ['Age', 'age', 'Ticket Age', 'Age of Ticket'],
+                'queue': ['Queue', 'queue', 'Ticket Queue'],
+                'owner': ['Owner', 'owner', 'Ticket Owner', 'Assigned To'],
+                'customer_id': ['CustomerID', 'Customer ID', 'customer_id', 'Customer'],
+                'customer_realname': ['Customer Realname', 'Customer Name', 'Customer Real Name'],
+                'title': ['Title', 'title', 'Ticket Title', 'Subject'],
+                'service': ['Service', 'service', 'Ticket Service'],
+                'type': ['Type', 'type', 'Ticket Type'],
+                'category': ['Category', 'category', 'Ticket Category'],
+                'sub_category': ['Sub Category', 'SubCategory', 'sub_category', 'Ticket Sub Category']
+            }
+            
+            actual_columns = {}
+            for key, possible_names in possible_columns.items():
+                for col in df.columns:
+                    if any(name.lower() in col.lower() for name in possible_names):
+                        actual_columns[key] = col
+                        break
+            
+            # Save each ticket to database
+            update_processing_status(5, '导入数据到数据库', '正在保存工单记录...')
+            new_records_count = 0
+            total_records = len(df)
+            
+            for index, (_, row) in enumerate(df.iterrows()):
+                # Parse dates
+                created_date = None
+                closed_date = None
+                
+                if 'created' in actual_columns:
+                    try:
+                        created_date = pd.to_datetime(row[actual_columns['created']], errors='coerce')
+                        if pd.isna(created_date):
+                            created_date = None
+                    except:
+                        created_date = None
+                
+                if 'closed' in actual_columns:
+                    try:
+                        closed_date = pd.to_datetime(row[actual_columns['closed']], errors='coerce')
+                        if pd.isna(closed_date):
+                            closed_date = None
+                    except:
+                        closed_date = None
+                
+                # Parse age to hours
+                age_hours = 0
+                if 'age' in actual_columns:
+                    age_hours = parse_age_to_hours(row[actual_columns['age']])
+                
+                # Check if ticket already exists (for incremental import)
+                ticket_number = str(row[actual_columns.get('ticket_number', '')]) if 'ticket_number' in actual_columns else None
+                
+                if not clear_existing and ticket_number:
+                    existing_ticket = OtrsTicket.query.filter_by(ticket_number=ticket_number).first()
+                    if existing_ticket:
+                        continue  # Skip existing tickets in incremental mode
+                
+                # Create ticket record
+                ticket = OtrsTicket(
+                    ticket_number=ticket_number,
+                    created_date=created_date,
+                    closed_date=closed_date,
+                    state=str(row[actual_columns.get('state', '')]) if 'state' in actual_columns else None,
+                    priority=str(row[actual_columns.get('priority', '')]) if 'priority' in actual_columns else None,
+                    first_response=str(row[actual_columns.get('firstresponse', '')]) if 'firstresponse' in actual_columns else None,
+                    age=str(row[actual_columns.get('age', '')]) if 'age' in actual_columns else None,
+                    age_hours=age_hours,
+                    queue=str(row[actual_columns.get('queue', '')]) if 'queue' in actual_columns else None,
+                    owner=str(row[actual_columns.get('owner', '')]) if 'owner' in actual_columns else None,
+                    customer_id=str(row[actual_columns.get('customer_id', '')]) if 'customer_id' in actual_columns else None,
+                    customer_realname=str(row[actual_columns.get('customer_realname', '')]) if 'customer_realname' in actual_columns else None,
+                    title=str(row[actual_columns.get('title', '')]) if 'title' in actual_columns else None,
+                    service=str(row[actual_columns.get('service', '')]) if 'service' in actual_columns else None,
+                    type=str(row[actual_columns.get('type', '')]) if 'type' in actual_columns else None,
+                    category=str(row[actual_columns.get('category', '')]) if 'category' in actual_columns else None,
+                    sub_category=str(row[actual_columns.get('sub_category', '')]) if 'sub_category' in actual_columns else None,
+                    data_source=file.filename,
+                    raw_data=row.to_json()
+                )
+                db.session.add(ticket)
+                new_records_count += 1
+                
+                # Update progress every 100 records
+                if index % 100 == 0:
+                    update_processing_status(5, '导入数据到数据库', 
+                                           f'已处理 {index + 1}/{total_records} 条记录 ({int((index + 1) / total_records * 100)}%)')
+            
+            # Commit all database changes
+            update_processing_status(6, '提交数据库更改', '正在保存所有数据...')
+            db.session.commit()
+            
+            # 记录上传详情到upload_detail表
+            import_mode = 'clear_existing' if clear_existing else 'incremental'
+            upload_record = UploadDetail(
+                filename=file.filename,
+                record_count=new_records_count,
+                import_mode=import_mode
+            )
+            db.session.add(upload_record)
+            db.session.commit()
+            
+            # Perform analysis directly from database using SQL queries
+            update_processing_status(7, '生成统计分析', '正在计算统计指标...')
+            stats = analyze_otrs_tickets_direct_from_db()
+            
+            # 记录统计查询结果到statistic表
+            total_new = sum(stats.get('daily_new', {}).values()) if 'daily_new' in stats else 0
+            total_closed = sum(stats.get('daily_closed', {}).values()) if 'daily_closed' in stats else 0
+            
+            statistic_record = Statistic(
+                query_type='main_analysis',
+                total_records=len(df),
+                current_open_count=stats.get('current_open_count', 0),
+                empty_firstresponse_count=stats.get('empty_firstresponse_count', 0),
+                daily_new_count=total_new,
+                daily_closed_count=total_closed,
+                upload_id=upload_record.id
+            )
+            db.session.add(statistic_record)
+            db.session.commit()
             
             # Prepare response data
             response_data = {
                 'success': True,
                 'total_records': len(df),
+                'new_records_count': new_records_count,
                 'stats': stats,
-                'session_id': session_id
+                'filename': file.filename
             }
             
             return jsonify(response_data)
             
         except Exception as e:
+            db.session.rollback()
             return jsonify({'error': f'Error processing file: {str(e)}'}), 500
     
     return jsonify({'error': 'Invalid file format. Please upload Excel file (.xlsx or .xls)'}), 400
@@ -278,20 +668,31 @@ def export_excel():
             # Daily statistics sheet
             if 'daily_new' in stats and 'daily_closed' in stats:
                 daily_data = []
-                all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
+                # 按日期升序排序进行计算（从最早开始）
+                all_dates_asc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
                 
-                # Calculate cumulative open tickets
+                # 按时间顺序计算累积Open Tickets（从最早日期开始）
                 cumulative_open = 0
-                for date in all_dates:
+                daily_open_calculated = {}
+                for date in all_dates_asc:
                     new_count = stats['daily_new'].get(date, 0)
                     closed_count = stats['daily_closed'].get(date, 0)
                     cumulative_open = cumulative_open + new_count - closed_count
+                    daily_open_calculated[date] = cumulative_open
+                
+                # 按日期降序排序输出（最新日期在前）
+                all_dates_desc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
+                
+                for date in all_dates_desc:
+                    new_count = stats['daily_new'].get(date, 0)
+                    closed_count = stats['daily_closed'].get(date, 0)
+                    open_count = daily_open_calculated.get(date, 0)
                     
                     daily_data.append({
                         'Date': date,
                         'New Tickets': new_count,
                         'Closed Tickets': closed_count,
-                        'Open Tickets': cumulative_open
+                        'Open Tickets': open_count
                     })
                 
                 pd.DataFrame(daily_data).to_excel(writer, sheet_name='Daily Statistics', index=False)
@@ -316,78 +717,94 @@ def export_excel():
                 ]
                 pd.DataFrame(age_data).to_excel(writer, sheet_name='Age Segments', index=False)
             
-            # Add age details sheets if session_id is provided
-            if 'session_id' in data:
-                session_id = data['session_id']
-                if session_id in uploaded_data:
-                    df = uploaded_data[session_id]
+            # Add age details and empty first response details
+            # Get all tickets from database
+            tickets = OtrsTicket.query.all()
+            
+            if tickets:
+                # Convert tickets to DataFrame
+                ticket_data = []
+                for ticket in tickets:
+                    ticket_data.append({
+                        'TicketNumber': ticket.ticket_number,
+                        'Created': ticket.created_date,
+                        'Closed': ticket.closed_date,
+                        'State': ticket.state,
+                        'Priority': ticket.priority,
+                        'FirstResponse': ticket.first_response,
+                        'Age': ticket.age,
+                        'AgeHours': ticket.age_hours
+                    })
+                
+                df = pd.DataFrame(ticket_data)
+                
+                # Find actual column names
+                possible_columns = {
+                    'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
+                    'age': ['Age', 'age'],
+                    'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
+                    'priority': ['Priority', 'priority'],
+                    'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date'],
+                    'firstresponse': ['FirstResponse', 'First Response', 'firstresponse'],
+                    'state': ['State', 'Status', 'Ticket State', 'state', 'status']
+                }
+                
+                actual_columns = {}
+                for key, possible_names in possible_columns.items():
+                    for col in df.columns:
+                        if any(name.lower() in col.lower() for name in possible_names):
+                            actual_columns[key] = col
+                            break
+                
+                # Age details sheets
+                if 'age' in actual_columns and 'closed' in actual_columns:
+                    open_tickets = df[df[actual_columns['closed']].isna()]
+                    open_tickets = open_tickets.copy()
+                    open_tickets['age_hours'] = open_tickets[actual_columns['age']].apply(parse_age_to_hours)
                     
-                    # Find actual column names
-                    possible_columns = {
-                        'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
-                        'age': ['Age', 'age'],
-                        'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
-                        'priority': ['Priority', 'priority'],
-                        'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date'],
-                        'firstresponse': ['FirstResponse', 'First Response', 'firstresponse'],
-                        'state': ['State', 'Status', 'Ticket State', 'state', 'status']
+                    # Age segments details
+                    age_segments_details = {
+                        '24h': open_tickets[open_tickets['age_hours'] <= 24],
+                        '24_48h': open_tickets[(open_tickets['age_hours'] > 24) & (open_tickets['age_hours'] <= 48)],
+                        '48_72h': open_tickets[(open_tickets['age_hours'] > 48) & (open_tickets['age_hours'] <= 72)],
+                        '72h': open_tickets[open_tickets['age_hours'] > 72]
                     }
                     
-                    actual_columns = {}
-                    for key, possible_names in possible_columns.items():
-                        for col in df.columns:
-                            if any(name.lower() in col.lower() for name in possible_names):
-                                actual_columns[key] = col
-                                break
-                    
-                    # Age details sheets
-                    if 'age' in actual_columns and 'closed' in actual_columns:
-                        open_tickets = df[df[actual_columns['closed']].isna()]
-                        open_tickets = open_tickets.copy()
-                        open_tickets['age_hours'] = open_tickets[actual_columns['age']].apply(parse_age_to_hours)
-                        
-                        # Age segments details
-                        age_segments_details = {
-                            '24h': open_tickets[open_tickets['age_hours'] <= 24],
-                            '24_48h': open_tickets[(open_tickets['age_hours'] > 24) & (open_tickets['age_hours'] <= 48)],
-                            '48_72h': open_tickets[(open_tickets['age_hours'] > 48) & (open_tickets['age_hours'] <= 72)],
-                            '72h': open_tickets[open_tickets['age_hours'] > 72]
-                        }
-                        
-                        for segment_name, segment_data in age_segments_details.items():
-                            if not segment_data.empty:
-                                segment_details = segment_data[[
-                                    actual_columns.get('ticket_number', 'Ticket Number'),
-                                    actual_columns.get('age', 'Age'),
-                                    actual_columns.get('created', 'Created'),
-                                    actual_columns.get('priority', 'Priority')
-                                ]].copy()
-                                segment_details.columns = ['Ticket Number', 'Age', 'Created', 'Priority']
-                                sheet_name = f"Age {segment_name.replace('_', '-')} Details"
-                                pd.DataFrame(segment_details).to_excel(writer, sheet_name=sheet_name[:31], index=False)
-                    
-                    # Empty first response details
-                    if 'firstresponse' in actual_columns:
-                        firstresponse_col = actual_columns['firstresponse']
-                        nan_empty = df[firstresponse_col].isna()
-                        empty_strings = df[firstresponse_col] == ''
-                        
-                        # Exclude Closed and Resolved states
-                        if 'state' in actual_columns:
-                            not_closed_resolved = ~df[actual_columns['state']].isin(['Closed', 'Resolved'])
-                            empty_firstresponse = df[(nan_empty | empty_strings) & not_closed_resolved]
-                        else:
-                            empty_firstresponse = df[nan_empty | empty_strings]
-                        
-                        if not empty_firstresponse.empty:
-                            empty_details = empty_firstresponse[[
+                    for segment_name, segment_data in age_segments_details.items():
+                        if not segment_data.empty:
+                            segment_details = segment_data[[
                                 actual_columns.get('ticket_number', 'Ticket Number'),
                                 actual_columns.get('age', 'Age'),
                                 actual_columns.get('created', 'Created'),
                                 actual_columns.get('priority', 'Priority')
                             ]].copy()
-                            empty_details.columns = ['Ticket Number', 'Age', 'Created', 'Priority']
-                            pd.DataFrame(empty_details).to_excel(writer, sheet_name='Empty FirstResponse Details', index=False)
+                            segment_details.columns = ['Ticket Number', 'Age', 'Created', 'Priority']
+                            sheet_name = f"Age {segment_name.replace('_', '-')} Details"
+                            pd.DataFrame(segment_details).to_excel(writer, sheet_name=sheet_name[:31], index=False)
+                
+                # Empty first response details
+                if 'firstresponse' in actual_columns:
+                    firstresponse_col = actual_columns['firstresponse']
+                    nan_empty = df[firstresponse_col].isna()
+                    empty_strings = df[firstresponse_col] == ''
+                    nan_strings = df[firstresponse_col].astype(str).str.lower() == 'nan'
+                    
+                    # Exclude Closed and Resolved states
+                    if 'state' in actual_columns:
+                        not_closed_resolved = ~df[actual_columns['state']].isin(['Closed', 'Resolved'])
+                        empty_firstresponse = df[(nan_empty | empty_strings | nan_strings) & not_closed_resolved]
+                    else:
+                        empty_firstresponse = df[nan_empty | empty_strings | nan_strings]
+                    
+                    if not empty_firstresponse.empty:
+                        empty_details = empty_firstresponse[[
+                            actual_columns.get('ticket_number', 'Ticket Number'),
+                            actual_columns.get('age', 'Age'),
+                            actual_columns.get('created', 'Created'),
+                            actual_columns.get('priority', 'Priority')
+                        ]].copy()
+                        empty_details.columns = ['Ticket Number', 'Age', 'Created', 'Priority']
+                        pd.DataFrame(empty_details).to_excel(writer, sheet_name='Empty FirstResponse Details', index=False)
         
         # Generate histogram if daily data exists
         if 'daily_new' in stats and 'daily_closed' in stats:
@@ -418,6 +835,14 @@ def export_excel():
         output.seek(0)
         filename = f"otrs_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
         
+        # 记录统计查询结果到statistic表
+        statistic_record = Statistic(
+            query_type='export_excel',
+            record_count=1  # 导出操作记录为1次
+        )
+        db.session.add(statistic_record)
+        db.session.commit()
+        
         return send_file(
             output,
             as_attachment=True,
@@ -430,70 +855,65 @@ def export_excel():
 
 @app.route('/age-details', methods=['POST'])
 def get_age_details():
-    """Get age segment details"""
+    """Get age segment details directly from database"""
     try:
         data = request.get_json()
-        if not data or 'age_segment' not in data or 'analysis_data' not in data or 'session_id' not in data:
+        if not data or 'age_segment' not in data:
             return jsonify({'error': 'Missing required data'}), 400
         
         age_segment = data['age_segment']
-        session_id = data['session_id']
         
-        # Get the stored DataFrame
-        if session_id not in uploaded_data:
-            return jsonify({'error': 'Session expired or invalid session ID'}), 400
+        # Get open tickets from database (where closed_date is NULL)
+        open_tickets = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).all()
         
-        df = uploaded_data[session_id]
+        if not open_tickets:
+            return jsonify({'error': 'No open tickets found in database'}), 400
         
-        # Find actual column names
-        possible_columns = {
-            'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
-            'age': ['Age', 'age'],
-            'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
-            'priority': ['Priority', 'priority'],
-            'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date']
-        }
-        
-        actual_columns = {}
-        for key, possible_names in possible_columns.items():
-            for col in df.columns:
-                if any(name.lower() in col.lower() for name in possible_names):
-                    actual_columns[key] = col
-                    break
-        
-        # Filter open tickets
-        if 'closed' in actual_columns:
-            open_tickets = df[df[actual_columns['closed']].isna()]
-        else:
-            open_tickets = df
-        
-        # Filter by age segment
-        if 'age' in actual_columns:
-            open_tickets = open_tickets.copy()
-            open_tickets['age_hours'] = open_tickets[actual_columns['age']].apply(parse_age_to_hours)
-            
-            if age_segment == '24h':
-                filtered_tickets = open_tickets[open_tickets['age_hours'] <= 24]
-            elif age_segment == '24_48h':
-                filtered_tickets = open_tickets[(open_tickets['age_hours'] > 24) & (open_tickets['age_hours'] <= 48)]
-            elif age_segment == '48_72h':
-                filtered_tickets = open_tickets[(open_tickets['age_hours'] > 48) & (open_tickets['age_hours'] <= 72)]
-            else:  # 72h+
-                filtered_tickets = open_tickets[open_tickets['age_hours'] > 72]
-        else:
-            # If no age column, return empty
-            filtered_tickets = pd.DataFrame()
-        
-        # Prepare details
+        # Filter by age segment directly from database
         details = []
-        for _, ticket in filtered_tickets.iterrows():
-            detail = {
-                'ticket_number': str(ticket[actual_columns.get('ticket_number', 'Ticket Number')]) if 'ticket_number' in actual_columns else 'N/A',
-                'age': str(ticket[actual_columns.get('age', 'Age')]) if 'age' in actual_columns else 'N/A',
-                'created': str(ticket[actual_columns.get('created', 'Created')]) if 'created' in actual_columns else 'N/A',
-                'priority': str(ticket[actual_columns.get('priority', 'Priority')]) if 'priority' in actual_columns else 'N/A'
-            }
-            details.append(detail)
+        for ticket in open_tickets:
+            if ticket.age_hours is not None:
+                if age_segment == '24h' and ticket.age_hours <= 24:
+                    detail = {
+                        'ticket_number': ticket.ticket_number or 'N/A',
+                        'age': ticket.age or 'N/A',
+                        'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                        'priority': ticket.priority or 'N/A'
+                    }
+                    details.append(detail)
+                elif age_segment == '24_48h' and 24 < ticket.age_hours <= 48:
+                    detail = {
+                        'ticket_number': ticket.ticket_number or 'N/A',
+                        'age': ticket.age or 'N/A',
+                        'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                        'priority': ticket.priority or 'N/A'
+                    }
+                    details.append(detail)
+                elif age_segment == '48_72h' and 48 < ticket.age_hours <= 72:
+                    detail = {
+                        'ticket_number': ticket.ticket_number or 'N/A',
+                        'age': ticket.age or 'N/A',
+                        'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                        'priority': ticket.priority or 'N/A'
+                    }
+                    details.append(detail)
+                elif age_segment == '72h' and ticket.age_hours > 72:
+                    detail = {
+                        'ticket_number': ticket.ticket_number or 'N/A',
+                        'age': ticket.age or 'N/A',
+                        'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                        'priority': ticket.priority or 'N/A'
+                    }
+                    details.append(detail)
+        
+        # 记录统计查询结果到statistic表
+        statistic_record = Statistic(
+            query_type='age_details',
+            age_segment=age_segment,
+            record_count=len(details)
+        )
+        db.session.add(statistic_record)
+        db.session.commit()
         
         return jsonify({
             'success': True,
@@ -505,64 +925,36 @@ def get_age_details():
 
 @app.route('/empty-firstresponse-details', methods=['POST'])
 def get_empty_firstresponse_details():
-    """Get empty first response details"""
+    """Get empty first response details directly from database"""
     try:
-        data = request.get_json()
-        if not data or 'session_id' not in data:
-            return jsonify({'error': 'Missing session ID'}), 400
-        
-        session_id = data['session_id']
-        
-        # Get the stored DataFrame
-        if session_id not in uploaded_data:
-            return jsonify({'error': 'Session expired or invalid session ID'}), 400
-        
-        df = uploaded_data[session_id]
-        
-        # Find actual column names
-        possible_columns = {
-            'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
-            'age': ['Age', 'age'],
-            'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
-            'priority': ['Priority', 'priority'],
-            'firstresponse': ['FirstResponse', 'First Response', 'firstresponse'],
-            'state': ['State', 'Status', 'Ticket State', 'state', 'status'],
-            'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date']
-        }
-        
-        actual_columns = {}
-        for key, possible_names in possible_columns.items():
-            for col in df.columns:
-                if any(name.lower() in col.lower() for name in possible_names):
-                    actual_columns[key] = col
-                    break
-        
-        # Filter empty first response tickets
-        if 'firstresponse' in actual_columns:
-            firstresponse_col = actual_columns['firstresponse']
-            nan_empty = df[firstresponse_col].isna()
-            empty_strings = df[firstresponse_col] == ''
-            
-            # Exclude Closed and Resolved states
-            if 'state' in actual_columns:
-                # Filter out Closed and Resolved states
-                not_closed_resolved = ~df[actual_columns['state']].isin(['Closed', 'Resolved'])
-                empty_firstresponse = df[(nan_empty | empty_strings) & not_closed_resolved]
-            else:
-                empty_firstresponse = df[nan_empty | empty_strings]
-        else:
-            empty_firstresponse = pd.DataFrame()
+        # Get tickets with empty first response directly from database
+        # Exclude Closed and Resolved states
+        empty_firstresponse_tickets = OtrsTicket.query.filter(
+            (OtrsTicket.first_response.is_(None) | 
+             (OtrsTicket.first_response == '') |
+             (OtrsTicket.first_response == 'nan') |
+             (OtrsTicket.first_response == 'NaN')),
+            ~OtrsTicket.state.in_(['Closed', 'Resolved'])
+        ).all()
         
         # Prepare details
         details = []
-        for _, ticket in empty_firstresponse.iterrows():
+        for ticket in empty_firstresponse_tickets:
             detail = {
-                'ticket_number': str(ticket[actual_columns.get('ticket_number', 'Ticket Number')]) if 'ticket_number' in actual_columns else 'N/A',
-                'age': str(ticket[actual_columns.get('age', 'Age')]) if 'age' in actual_columns else 'N/A',
-                'created': str(ticket[actual_columns.get('created', 'Created')]) if 'created' in actual_columns else 'N/A',
-                'priority': str(ticket[actual_columns.get('priority', 'Priority')]) if 'priority' in actual_columns else 'N/A'
+                'ticket_number': ticket.ticket_number or 'N/A',
+                'age': ticket.age or 'N/A',
+                'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                'priority': ticket.priority or 'N/A'
             }
             details.append(detail)
+        
+        # 记录统计查询结果到statistic表
+        statistic_record = Statistic(
+            query_type='empty_firstresponse',
+            record_count=len(details)
+        )
+        db.session.add(statistic_record)
+        db.session.commit()
         
         return jsonify({
             'success': True,
@@ -605,15 +997,26 @@ def export_txt():
             content.append("Date\t\tNew\tClosed\tOpen")
             content.append("-" * 30)
             
-            all_dates = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
+            # 按日期升序排序进行计算（从最早开始）
+            all_dates_asc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()))
             
-            # Calculate cumulative open tickets
+            # 按时间顺序计算累积Open Tickets（从最早日期开始）
             cumulative_open = 0
-            for date in all_dates:
+            daily_open_calculated = {}
+            for date in all_dates_asc:
                 new_count = stats['daily_new'].get(date, 0)
                 closed_count = stats['daily_closed'].get(date, 0)
                 cumulative_open = cumulative_open + new_count - closed_count
-                content.append(f"{date}\t{new_count}\t{closed_count}\t{cumulative_open}")
+                daily_open_calculated[date] = cumulative_open
+            
+            # 按日期降序排序输出（最新日期在前）
+            all_dates_desc = sorted(set(stats['daily_new'].keys()) | set(stats['daily_closed'].keys()), reverse=True)
+            
+            for date in all_dates_desc:
+                new_count = stats['daily_new'].get(date, 0)
+                closed_count = stats['daily_closed'].get(date, 0)
+                open_count = daily_open_calculated.get(date, 0)
+                content.append(f"{date}\t{new_count}\t{closed_count}\t{open_count}")
             content.append("")
         
         # Priority distribution
@@ -650,71 +1053,87 @@ def export_txt():
             content.append(f">72小时: {stats['age_segments']['age_72h']}")
             content.append("")
         
-        # Add age details and empty first response details if session_id is provided
-        if 'session_id' in data:
-            session_id = data['session_id']
-            if session_id in uploaded_data:
-                df = uploaded_data[session_id]
+        # Add age details and empty first response details
+        # Get all tickets from database
+        tickets = OtrsTicket.query.all()
+        
+        if tickets:
+            # Convert tickets to DataFrame
+            ticket_data = []
+            for ticket in tickets:
+                ticket_data.append({
+                    'TicketNumber': ticket.ticket_number,
+                    'Created': ticket.created_date,
+                    'Closed': ticket.closed_date,
+                    'State': ticket.state,
+                    'Priority': ticket.priority,
+                    'FirstResponse': ticket.first_response,
+                    'Age': ticket.age,
+                    'AgeHours': ticket.age_hours
+                })
+            
+            df = pd.DataFrame(ticket_data)
+            
+            # Find actual column names
+            possible_columns = {
+                'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
+                'age': ['Age', 'age'],
+                'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
+                'priority': ['Priority', 'priority'],
+                'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date'],
+                'firstresponse': ['FirstResponse', 'First Response', 'firstresponse'],
+                'state': ['State', 'Status', 'Ticket State', 'state', 'status']
+            }
+            
+            actual_columns = {}
+            for key, possible_names in possible_columns.items():
+                for col in df.columns:
+                    if any(name.lower() in col.lower() for name in possible_names):
+                        actual_columns[key] = col
+                        break
+            
+            # Age details
+            if 'age' in actual_columns and 'closed' in actual_columns:
+                open_tickets = df[df[actual_columns['closed']].isna()]
+                open_tickets = open_tickets.copy()
+                open_tickets['age_hours'] = open_tickets[actual_columns['age']].apply(parse_age_to_hours)
                 
-                # Find actual column names
-                possible_columns = {
-                    'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
-                    'age': ['Age', 'age'],
-                    'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
-                    'priority': ['Priority', 'priority'],
-                    'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date'],
-                    'firstresponse': ['FirstResponse', 'First Response', 'firstresponse'],
-                    'state': ['State', 'Status', 'Ticket State', 'state', 'status']
+                # Age segments details
+                age_segments_details = {
+                    '≤24小时': open_tickets[open_tickets['age_hours'] <= 24],
+                    '24-48小时': open_tickets[(open_tickets['age_hours'] > 24) & (open_tickets['age_hours'] <= 48)],
+                    '48-72小时': open_tickets[(open_tickets['age_hours'] > 48) & (open_tickets['age_hours'] <= 72)],
+                    '>72小时': open_tickets[open_tickets['age_hours'] > 72]
                 }
                 
-                actual_columns = {}
-                for key, possible_names in possible_columns.items():
-                    for col in df.columns:
-                        if any(name.lower() in col.lower() for name in possible_names):
-                            actual_columns[key] = col
-                            break
-                
-                # Age details
-                if 'age' in actual_columns and 'closed' in actual_columns:
-                    open_tickets = df[df[actual_columns['closed']].isna()]
-                    open_tickets = open_tickets.copy()
-                    open_tickets['age_hours'] = open_tickets[actual_columns['age']].apply(parse_age_to_hours)
-                    
-                    # Age segments details
-                    age_segments_details = {
-                        '≤24小时': open_tickets[open_tickets['age_hours'] <= 24],
-                        '24-48小时': open_tickets[(open_tickets['age_hours'] > 24) & (open_tickets['age_hours'] <= 48)],
-                        '48-72小时': open_tickets[(open_tickets['age_hours'] > 48) & (open_tickets['age_hours'] <= 72)],
-                        '>72小时': open_tickets[open_tickets['age_hours'] > 72]
-                    }
-                    
-                    for segment_name, segment_data in age_segments_details.items():
-                        if not segment_data.empty:
-                            content.append(f"{segment_name}工单明细")
-                            content.append("-" * 30)
-                            content.append("Ticket Number\tAge\tCreated\tPriority")
-                            content.append("-" * 30)
-                            
-                            for _, ticket in segment_data.iterrows():
-                                ticket_number = str(ticket[actual_columns.get('ticket_number', 'Ticket Number')]) if 'ticket_number' in actual_columns else 'N/A'
-                                age = str(ticket[actual_columns.get('age', 'Age')]) if 'age' in actual_columns else 'N/A'
-                                created = str(ticket[actual_columns.get('created', 'Created')]) if 'created' in actual_columns else 'N/A'
-                                priority = str(ticket[actual_columns.get('priority', 'Priority')]) if 'priority' in actual_columns else 'N/A'
-                                content.append(f"{ticket_number}\t{age}\t{created}\t{priority}")
-                            content.append("")
-                
+                for segment_name, segment_data in age_segments_details.items():
+                    if not segment_data.empty:
+                        content.append(f"{segment_name}工单明细")
+                        content.append("-" * 30)
+                        content.append("Ticket Number\tAge\tCreated\tPriority")
+                        content.append("-" * 30)
+                        
+                        for _, ticket in segment_data.iterrows():
+                            ticket_number = str(ticket[actual_columns.get('ticket_number', 'Ticket Number')]) if 'ticket_number' in actual_columns else 'N/A'
+                            age = str(ticket[actual_columns.get('age', 'Age')]) if 'age' in actual_columns else 'N/A'
+                            created = str(ticket[actual_columns.get('created', 'Created')]) if 'created' in actual_columns else 'N/A'
+                            priority = str(ticket[actual_columns.get('priority', 'Priority')]) if 'priority' in actual_columns else 'N/A'
+                            content.append(f"{ticket_number}\t{age}\t{created}\t{priority}")
+                        content.append("")
+            
                 # Empty first response details
                 if 'firstresponse' in actual_columns:
                     firstresponse_col = actual_columns['firstresponse']
                     nan_empty = df[firstresponse_col].isna()
                     empty_strings = df[firstresponse_col] == ''
+                    nan_strings = df[firstresponse_col].astype(str).str.lower() == 'nan'
                     
                     # Exclude Closed and Resolved states
                     if 'state' in actual_columns:
                         not_closed_resolved = ~df[actual_columns['state']].isin(['Closed', 'Resolved'])
-                        empty_firstresponse = df[(nan_empty | empty_strings) & not_closed_resolved]
+                        empty_firstresponse = df[(nan_empty | empty_strings | nan_strings) & not_closed_resolved]
                     else:
-                        empty_firstresponse = df[nan_empty | empty_strings]
+                        empty_firstresponse = df[nan_empty | empty_strings | nan_strings]
                     
                     if not empty_firstresponse.empty:
                         content.append("空FirstResponse工单明细")
@@ -738,6 +1157,14 @@ def export_txt():
         
         filename = f"otrs_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         
+        # 记录统计查询结果到statistic表
+        statistic_record = Statistic(
+            query_type='export_txt',
+            record_count=1  # 导出操作记录为1次
+        )
+        db.session.add(statistic_record)
+        db.session.commit()
+        
         return send_file(
             text_buffer,
             as_attachment=True,
@@ -747,6 +1174,51 @@ def export_txt():
         
     except Exception as e:
         return jsonify({'error': f'Error exporting text: {str(e)}'}), 500
+
+@app.route('/clear-database', methods=['POST'])
+def clear_database():
+    """Clear all data from OTRS tickets table"""
+    try:
+        # 获取当前记录数
+        record_count = OtrsTicket.query.count()
+        
+        if record_count == 0:
+            return jsonify({
+                'success': True,
+                'message': '数据库已经是空的，无需清理',
+                'records_cleared': 0
+            })
+        
+        # 删除所有记录
+        OtrsTicket.query.delete()
+        db.session.commit()
+        
+        # 记录数据库操作日志
+        log_database_operation(
+            operation_type='clear_tickets',
+            table_name='otrs_ticket',
+            records_affected=record_count,
+            operation_details='用户手动清除了所有工单数据',
+            filename='manual_clear'
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功清除了 {record_count} 条工单记录',
+            'records_cleared': record_count
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'清除数据库时发生错误: {str(e)}'
+        }), 500
+
+@app.route('/progress')
+def get_progress():
+    """Get current processing progress status"""
+    return jsonify(processing_status)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
