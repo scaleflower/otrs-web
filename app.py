@@ -774,7 +774,7 @@ def export_excel():
 
 @app.route('/age-details', methods=['POST'])
 def get_age_details():
-    """Get age segment details"""
+    """Get age segment details directly from database"""
     try:
         data = request.get_json()
         if not data or 'age_segment' not in data:
@@ -782,77 +782,48 @@ def get_age_details():
         
         age_segment = data['age_segment']
         
-        # Get all tickets from database
-        tickets = OtrsTicket.query.all()
+        # Get open tickets from database (where closed_date is NULL)
+        open_tickets = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).all()
         
-        if not tickets:
-            return jsonify({'error': 'No tickets found in database'}), 400
+        if not open_tickets:
+            return jsonify({'error': 'No open tickets found in database'}), 400
         
-        # Convert tickets to DataFrame
-        ticket_data = []
-        for ticket in tickets:
-            ticket_data.append({
-                'TicketNumber': ticket.ticket_number,
-                'Created': ticket.created_date,
-                'Closed': ticket.closed_date,
-                'State': ticket.state,
-                'Priority': ticket.priority,
-                'FirstResponse': ticket.first_response,
-                'Age': ticket.age,
-                'AgeHours': ticket.age_hours
-            })
-        
-        df = pd.DataFrame(ticket_data)
-        
-        # Find actual column names
-        possible_columns = {
-            'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
-            'age': ['Age', 'age'],
-            'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
-            'priority': ['Priority', 'priority'],
-            'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date']
-        }
-        
-        actual_columns = {}
-        for key, possible_names in possible_columns.items():
-            for col in df.columns:
-                if any(name.lower() in col.lower() for name in possible_names):
-                    actual_columns[key] = col
-                    break
-        
-        # Filter open tickets
-        if 'closed' in actual_columns:
-            open_tickets = df[df[actual_columns['closed']].isna()]
-        else:
-            open_tickets = df
-        
-        # Filter by age segment
-        if 'age' in actual_columns:
-            open_tickets = open_tickets.copy()
-            open_tickets['age_hours'] = open_tickets[actual_columns['age']].apply(parse_age_to_hours)
-            
-            if age_segment == '24h':
-                filtered_tickets = open_tickets[open_tickets['age_hours'] <= 24]
-            elif age_segment == '24_48h':
-                filtered_tickets = open_tickets[(open_tickets['age_hours'] > 24) & (open_tickets['age_hours'] <= 48)]
-            elif age_segment == '48_72h':
-                filtered_tickets = open_tickets[(open_tickets['age_hours'] > 48) & (open_tickets['age_hours'] <= 72)]
-            else:  # 72h+
-                filtered_tickets = open_tickets[open_tickets['age_hours'] > 72]
-        else:
-            # If no age column, return empty
-            filtered_tickets = pd.DataFrame()
-        
-        # Prepare details
+        # Filter by age segment directly from database
         details = []
-        for _, ticket in filtered_tickets.iterrows():
-            detail = {
-                'ticket_number': str(ticket[actual_columns.get('ticket_number', 'Ticket Number')]) if 'ticket_number' in actual_columns else 'N/A',
-                'age': str(ticket[actual_columns.get('age', 'Age')]) if 'age' in actual_columns else 'N/A',
-                'created': str(ticket[actual_columns.get('created', 'Created')]) if 'created' in actual_columns else 'N/A',
-                'priority': str(ticket[actual_columns.get('priority', 'Priority')]) if 'priority' in actual_columns else 'N/A'
-            }
-            details.append(detail)
+        for ticket in open_tickets:
+            if ticket.age_hours is not None:
+                if age_segment == '24h' and ticket.age_hours <= 24:
+                    detail = {
+                        'ticket_number': ticket.ticket_number or 'N/A',
+                        'age': ticket.age or 'N/A',
+                        'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                        'priority': ticket.priority or 'N/A'
+                    }
+                    details.append(detail)
+                elif age_segment == '24_48h' and 24 < ticket.age_hours <= 48:
+                    detail = {
+                        'ticket_number': ticket.ticket_number or 'N/A',
+                        'age': ticket.age or 'N/A',
+                        'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                        'priority': ticket.priority or 'N/A'
+                    }
+                    details.append(detail)
+                elif age_segment == '48_72h' and 48 < ticket.age_hours <= 72:
+                    detail = {
+                        'ticket_number': ticket.ticket_number or 'N/A',
+                        'age': ticket.age or 'N/A',
+                        'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                        'priority': ticket.priority or 'N/A'
+                    }
+                    details.append(detail)
+                elif age_segment == '72h' and ticket.age_hours > 72:
+                    detail = {
+                        'ticket_number': ticket.ticket_number or 'N/A',
+                        'age': ticket.age or 'N/A',
+                        'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                        'priority': ticket.priority or 'N/A'
+                    }
+                    details.append(detail)
         
         # 记录统计查询结果到statistic表
         statistic_record = Statistic(
@@ -873,73 +844,26 @@ def get_age_details():
 
 @app.route('/empty-firstresponse-details', methods=['POST'])
 def get_empty_firstresponse_details():
-    """Get empty first response details"""
+    """Get empty first response details directly from database"""
     try:
-        # Get all tickets from database
-        tickets = OtrsTicket.query.all()
-        
-        if not tickets:
-            return jsonify({'error': 'No tickets found in database'}), 400
-        
-        # Convert tickets to DataFrame
-        ticket_data = []
-        for ticket in tickets:
-            ticket_data.append({
-                'TicketNumber': ticket.ticket_number,
-                'Created': ticket.created_date,
-                'Closed': ticket.closed_date,
-                'State': ticket.state,
-                'Priority': ticket.priority,
-                'FirstResponse': ticket.first_response,
-                'Age': ticket.age,
-                'AgeHours': ticket.age_hours
-            })
-        
-        df = pd.DataFrame(ticket_data)
-        
-        # Find actual column names
-        possible_columns = {
-            'ticket_number': ['Ticket Number', 'TicketNumber', 'Number', 'ticket_number', 'id'],
-            'age': ['Age', 'age'],
-            'created': ['Created', 'CreateTime', 'Create Time', 'Date Created', 'created', 'creation_date'],
-            'priority': ['Priority', 'priority'],
-            'firstresponse': ['FirstResponse', 'First Response', 'firstresponse'],
-            'state': ['State', 'Status', 'Ticket State', 'state', 'status'],
-            'closed': ['Closed', 'CloseTime', 'Close Time', 'Date Closed', 'closed', 'close_date']
-        }
-        
-        actual_columns = {}
-        for key, possible_names in possible_columns.items():
-            for col in df.columns:
-                if any(name.lower() in col.lower() for name in possible_names):
-                    actual_columns[key] = col
-                    break
-        
-        # Filter empty first response tickets
-        if 'firstresponse' in actual_columns:
-            firstresponse_col = actual_columns['firstresponse']
-            nan_empty = df[firstresponse_col].isna()
-            empty_strings = df[firstresponse_col] == ''
-            nan_strings = df[firstresponse_col].astype(str).str.lower() == 'nan'
-            
-            # Exclude Closed and Resolved states
-            if 'state' in actual_columns:
-                # Filter out Closed and Resolved states
-                not_closed_resolved = ~df[actual_columns['state']].isin(['Closed', 'Resolved'])
-                empty_firstresponse = df[(nan_empty | empty_strings | nan_strings) & not_closed_resolved]
-            else:
-                empty_firstresponse = df[nan_empty | empty_strings | nan_strings]
-        else:
-            empty_firstresponse = pd.DataFrame()
+        # Get tickets with empty first response directly from database
+        # Exclude Closed and Resolved states
+        empty_firstresponse_tickets = OtrsTicket.query.filter(
+            (OtrsTicket.first_response.is_(None) | 
+             (OtrsTicket.first_response == '') |
+             (OtrsTicket.first_response == 'nan') |
+             (OtrsTicket.first_response == 'NaN')),
+            ~OtrsTicket.state.in_(['Closed', 'Resolved'])
+        ).all()
         
         # Prepare details
         details = []
-        for _, ticket in empty_firstresponse.iterrows():
+        for ticket in empty_firstresponse_tickets:
             detail = {
-                'ticket_number': str(ticket[actual_columns.get('ticket_number', 'Ticket Number')]) if 'ticket_number' in actual_columns else 'N/A',
-                'age': str(ticket[actual_columns.get('age', 'Age')]) if 'age' in actual_columns else 'N/A',
-                'created': str(ticket[actual_columns.get('created', 'Created')]) if 'created' in actual_columns else 'N/A',
-                'priority': str(ticket[actual_columns.get('priority', 'Priority')]) if 'priority' in actual_columns else 'N/A'
+                'ticket_number': ticket.ticket_number or 'N/A',
+                'age': ticket.age or 'N/A',
+                'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                'priority': ticket.priority or 'N/A'
             }
             details.append(detail)
         
