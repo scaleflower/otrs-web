@@ -236,6 +236,53 @@ sudo systemctl reload nginx
 3. **监控**: Prometheus + Grafana
 4. **日志**: ELK Stack或类似方案
 
+## 数据库结构
+
+系统使用SQLite数据库存储工单数据和统计信息，包含以下表：
+
+### otrs_ticket 表（工单数据表）
+- **id**: INTEGER - 主键ID
+- **ticket_number**: VARCHAR(100) - 工单编号
+- **created_date**: DATETIME - 创建时间
+- **closed_date**: DATETIME - 关闭时间
+- **state**: VARCHAR(100) - 工单状态
+- **priority**: VARCHAR(50) - 优先级
+- **first_response**: VARCHAR(255) - 首次响应内容
+- **age**: VARCHAR(50) - 工单年龄（文本格式）
+- **age_hours**: FLOAT - 工单年龄（小时数）
+- **queue**: VARCHAR(255) - 队列
+- **owner**: VARCHAR(255) - 负责人
+- **customer_id**: VARCHAR(255) - 客户ID
+- **customer_realname**: VARCHAR(255) - 客户真实姓名
+- **title**: TEXT - 工单标题
+- **service**: VARCHAR(255) - 服务
+- **type**: VARCHAR(100) - 类型
+- **category**: VARCHAR(255) - 类别
+- **sub_category**: VARCHAR(255) - 子类别
+- **import_time**: DATETIME - 导入时间
+- **data_source**: VARCHAR(255) - 数据来源
+- **raw_data**: TEXT - 原始数据
+
+### statistic 表（统计表）
+- **id**: INTEGER - 主键ID
+- **query_time**: DATETIME - 查询时间
+- **query_type**: VARCHAR(50) - 查询类型
+- **total_records**: INTEGER - 总记录数
+- **current_open_count**: INTEGER - 当前开放工单数量
+- **empty_firstresponse_count**: INTEGER - 空FirstResponse数量
+- **daily_new_count**: INTEGER - 每日新增数量
+- **daily_closed_count**: INTEGER - 每日关闭数量
+- **age_segment**: VARCHAR(50) - 年龄分段
+- **record_count**: INTEGER - 记录数量
+- **upload_id**: INTEGER - 上传ID（外键）
+
+### upload_detail 表（上传详情表）
+- **id**: INTEGER - 主键ID
+- **filename**: VARCHAR(255) - 文件名
+- **upload_time**: DATETIME - 上传时间
+- **record_count**: INTEGER - 记录数量
+- **import_mode**: VARCHAR(50) - 导入模式
+
 ## 文件结构
 
 ```
