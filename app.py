@@ -947,7 +947,8 @@ def get_empty_firstresponse_details():
                 'ticket_number': ticket.ticket_number or 'N/A',
                 'age': ticket.age or 'N/A',
                 'created': str(ticket.created_date) if ticket.created_date else 'N/A',
-                'priority': ticket.priority or 'N/A'
+                'priority': ticket.priority or 'N/A',
+                'state': ticket.state or 'N/A'
             }
             details.append(detail)
         
@@ -966,6 +967,73 @@ def get_empty_firstresponse_details():
         
     except Exception as e:
         return jsonify({'error': f'Error getting empty first response details: {str(e)}'}), 500
+
+@app.route('/database-stats')
+def database_stats():
+    """Get comprehensive statistics directly from database"""
+    try:
+        # Get total records count
+        total_records = OtrsTicket.query.count()
+        
+        if total_records == 0:
+            return jsonify({
+                'success': True,
+                'total_records': 0,
+                'data_sources_count': 0,
+                'last_updated': None,
+                'stats': {},
+                'empty_firstresponse_details': []
+            })
+        
+        # Get data sources count
+        data_sources_count = OtrsTicket.query.with_entities(OtrsTicket.data_source).distinct().count()
+        
+        # Get last updated timestamp
+        last_updated_ticket = OtrsTicket.query.order_by(OtrsTicket.import_time.desc()).first()
+        last_updated = last_updated_ticket.import_time.isoformat() if last_updated_ticket and last_updated_ticket.import_time else None
+        
+        # Get statistics using direct database queries
+        stats = analyze_otrs_tickets_direct_from_db()
+        
+        # Get empty first response details
+        empty_firstresponse_tickets = OtrsTicket.query.filter(
+            (OtrsTicket.first_response.is_(None) | 
+             (OtrsTicket.first_response == '') |
+             (OtrsTicket.first_response == 'nan') |
+             (OtrsTicket.first_response == 'NaN')),
+            ~OtrsTicket.state.in_(['Closed', 'Resolved'])
+        ).all()
+        
+        empty_firstresponse_details = []
+        for ticket in empty_firstresponse_tickets:
+            detail = {
+                'ticket_number': ticket.ticket_number or 'N/A',
+                'age': ticket.age or 'N/A',
+                'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                'priority': ticket.priority or 'N/A',
+                'state': ticket.state or 'N/A'
+            }
+            empty_firstresponse_details.append(detail)
+        
+        return jsonify({
+            'success': True,
+            'total_records': total_records,
+            'data_sources_count': data_sources_count,
+            'last_updated': last_updated,
+            'stats': stats,
+            'empty_firstresponse_details': empty_firstresponse_details
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error getting database statistics: {str(e)}'
+        }), 500
+
+@app.route('/database')
+def database_page():
+    """Database statistics page"""
+    return render_template('database_stats.html', APP_VERSION=APP_VERSION)
 
 @app.route('/export/txt', methods=['POST'])
 def export_txt():

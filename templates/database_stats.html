@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OTRS Ticket Analysis System - Database Statistics</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-chart-line"></i> OTRS Ticket Analysis System</h1>
+                <p>View real-time statistics from database</p>
+                <div class="header-actions">
+                    <a href="/" class="btn btn-secondary">
+                        <i class="fas fa-upload"></i> Upload Excel
+                    </a>
+                    <button id="refreshBtn" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Refresh Data
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Loading Section -->
+            <section id="loadingSection" class="loading-section" style="display: none;">
+                <div class="loading-card">
+                    <div class="spinner"></div>
+                    <h3>Loading Database Statistics...</h3>
+                    <div id="statusMessages" class="status-messages">
+                        <div id="currentStatus" class="status-message">Querying database...</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Database Info Section -->
+            <section id="databaseInfoSection" class="database-info-section" style="display: none;">
+                <div class="info-card">
+                    <h3><i class="fas fa-database"></i> Database Information</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Total Records:</span>
+                            <span id="totalRecordsInfo" class="info-value">0</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Data Sources:</span>
+                            <span id="dataSourcesInfo" class="info-value">0</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Last Updated:</span>
+                            <span id="lastUpdatedInfo" class="info-value">Never</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section id="resultsSection" class="results-section" style="display: none;">
+                <div class="results-header">
+                    <h2><i class="fas fa-chart-bar"></i> Database Statistics</h2>
+                    <div class="action-buttons">
+                        <div class="export-buttons">
+                            <button id="exportExcel" class="btn btn-primary">
+                                <i class="fas fa-file-excel"></i> Export Excel
+                            </button>
+                            <button id="exportTxt" class="btn btn-secondary">
+                                <i class="fas fa-file-alt"></i> Export Text
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <div class="card-icon total">
+                            <i class="fas fa-database"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3 id="totalRecords">0</h3>
+                            <p>Total Records</p>
+                        </div>
+                    </div>
+                    
+                    <div class="summary-card">
+                        <div class="card-icon open">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3 id="openTickets">0</h3>
+                            <p>Current Open Tickets</p>
+                        </div>
+                    </div>
+                    
+                    <div class="summary-card">
+                        <div class="card-icon empty">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="card-content">
+                            <h3 id="emptyFirstResponse">0</h3>
+                            <p>Empty FirstResponse</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Results -->
+                <div class="detailed-results">
+                    <!-- First Row: Daily Statistics and Age Segments -->
+                    <div class="result-row">
+                        <!-- Daily Statistics -->
+                        <div class="result-card">
+                            <h3><i class="fas fa-calendar-day"></i> Daily Statistics</h3>
+                            <div class="sort-controls">
+                                <label for="sortOrder">Sort by Date:</label>
+                                <select id="sortOrder" class="sort-select">
+                                    <option value="desc" selected>Newest First</option>
+                                    <option value="asc">Oldest First</option>
+                                </select>
+                            </div>
+                            <div class="table-container">
+                                <table id="dailyTable" class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>New Tickets</th>
+                                            <th>Closed Tickets</th>
+                                            <th>Open Tickets</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Age Segments -->
+                        <div class="result-card">
+                            <h3><i class="fas fa-clock"></i> Open Tickets Age Segments</h3>
+                            <div class="table-container">
+                                <table class="data-table age-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Time Period</th>
+                                            <th>Ticket Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>≤24 hours</td>
+                                            <td id="age24h" class="age-clickable" data-age-segment="24h">0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>24-48 hours</td>
+                                            <td id="age24_48h" class="age-clickable" data-age-segment="24_48h">0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>48-72 hours</td>
+                                            <td id="age48_72h" class="age-clickable" data-age-segment="48_72h">0</td>
+                                        </tr>
+                                        <tr>
+                                            <td>>72 hours</td>
+                                            <td id="age72h" class="age-clickable" data-age-segment="72h">0</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- Age Details Container -->
+                            <div id="ageDetailsContainer" class="details-container" style="display: none;">
+                                <h4>Ticket Details</h4>
+                                <div class="table-container">
+                                    <table id="ageDetailsTable" class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Ticket Number</th>
+                                                <th>Age</th>
+                                                <th>Created</th>
+                                                <th>Priority</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <!-- Will be populated by JavaScript -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Second Row: Priority and State Distribution -->
+                    <div class="result-row">
+                        <!-- Priority Distribution -->
+                        <div class="result-card">
+                            <h3><i class="fas fa-star"></i> Priority Distribution</h3>
+                            <div class="table-container">
+                                <table id="priorityTable" class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Priority</th>
+                                            <th>Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- State Distribution -->
+                        <div class="result-card">
+                            <h3><i class="fas fa-tasks"></i> State Distribution</h3>
+                            <div class="table-container">
+                                <table id="stateTable" class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>State</th>
+                                            <th>Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Third Row: Empty FirstResponse -->
+                    <div class="result-row">
+                        <div class="result-card full-width">
+                            <h3><i class="fas fa-exclamation-circle"></i> Empty FirstResponse Details</h3>
+                            <div class="table-container">
+                                <table id="emptyFirstResponseTable" class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Ticket Number</th>
+                                            <th>Age</th>
+                                            <th>Created</th>
+                                            <th>Priority</th>
+                                            <th>State</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <!-- Will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Empty Database Section -->
+            <section id="emptyDatabaseSection" class="empty-database-section" style="display: none;">
+                <div class="empty-card">
+                    <div class="empty-icon">
+                        <i class="fas fa-database"></i>
+                    </div>
+                    <h3>No Data in Database</h3>
+                    <p>The database is currently empty. Please upload an Excel file to populate the database with ticket data.</p>
+                    <a href="/" class="btn btn-primary">
+                        <i class="fas fa-upload"></i> Upload Excel File
+                    </a>
+                </div>
+            </section>
+
+            <!-- Error Section -->
+            <section id="errorSection" class="error-section" style="display: none;">
+                <div class="error-card">
+                    <div class="error-icon">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <h3>Error Loading Data</h3>
+                    <p id="errorMessage"></p>
+                    <button onclick="hideError()" class="btn btn-primary">Try Again</button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2025 OTRS Ticket Analysis System | Built with Flask and Pandas by Jacky</p>
+            <p class="version-info">Version: {{ APP_VERSION }}</p>
+        </footer>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='js/database_stats.js') }}"></script>
+</body>
+</html>
