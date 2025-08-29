@@ -49,6 +49,16 @@ function initializeEventListeners() {
             handleAgeSegmentClick(ageSegment);
         }
     });
+    
+    // Sort order change event
+    const sortOrderSelect = document.getElementById('sortOrder');
+    if (sortOrderSelect) {
+        sortOrderSelect.addEventListener('change', function() {
+            if (analysisData && analysisData.stats) {
+                updateDailyTable(analysisData.stats);
+            }
+        });
+    }
 }
 
 function handleFileSelect(event) {
