@@ -53,18 +53,13 @@ Thumbs.db
 logs/
 
 # Uploads
-uploads/
-*.xlsx
-*.xls
+
 
 # Test data
-sample_otrs_data.xlsx
-sample_test_data.py
-test_app.py
+
 
 # Temporary files
 *.tmp
 *.temp
 
 # App specific
-app.zip
