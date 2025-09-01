@@ -1514,11 +1514,15 @@ def get_responsible_details():
             query = query.filter(db.func.date(OtrsTicket.created_date) == time_value)
         elif period == 'week':
             # Filter by specific week (format: YYYY-WW)
-            year, week = time_value.split('-')
             query = query.filter(db.func.strftime('%Y-%W', OtrsTicket.created_date) == time_value)
         elif period == 'month':
             # Filter by specific month (format: YYYY-MM)
             query = query.filter(db.func.strftime('%Y-%m', OtrsTicket.created_date) == time_value)
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid period specified'
+            }), 400
         
         # Get tickets
         tickets = query.order_by(OtrsTicket.created_date.desc()).all()
