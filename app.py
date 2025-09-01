@@ -98,6 +98,7 @@ class OtrsTicket(db.Model):
     type = db.Column(db.String(100))
     category = db.Column(db.String(255))
     sub_category = db.Column(db.String(255))
+    responsible = db.Column(db.String(255))  # Responsible person field
     
     # Metadata
     import_time = db.Column(db.DateTime, default=datetime.utcnow)
@@ -140,6 +141,15 @@ class DatabaseLog(db.Model):
     operation_details = db.Column(db.Text)  # Operation details
     user_info = db.Column(db.String(255))  # User information (IP, browser, etc.)
     filename = db.Column(db.String(255))  # Related filename (if any)
+
+
+# Responsible configuration table for storing user selections
+class ResponsibleConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_identifier = db.Column(db.String(255))  # User IP address for identification
+    selected_responsibles = db.Column(db.Text)  # JSON array of selected responsible names
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # Create database tables
 with app.app_context():
@@ -513,7 +523,8 @@ def upload_file():
                 'service': ['Service', 'service', 'Ticket Service'],
                 'type': ['Type', 'type', 'Ticket Type'],
                 'category': ['Category', 'category', 'Ticket Category'],
-                'sub_category': ['Sub Category', 'SubCategory', 'sub_category', 'Ticket Sub Category']
+                'sub_category': ['Sub Category', 'SubCategory', 'sub_category', 'Ticket Sub Category'],
+                'responsible': ['Responsible', 'responsible', 'Assignee', 'assignee', '处理人', '负责人']
             }
             
             actual_columns = {}
@@ -581,6 +592,7 @@ def upload_file():
                     type=str(row[actual_columns.get('type', '')]) if 'type' in actual_columns else None,
                     category=str(row[actual_columns.get('category', '')]) if 'category' in actual_columns else None,
                     sub_category=str(row[actual_columns.get('sub_category', '')]) if 'sub_category' in actual_columns else None,
+                    responsible=str(row[actual_columns.get('responsible', '')]) if 'responsible' in actual_columns else None,
                     data_source=file.filename,
                     raw_data=row.to_json()
                 )
@@ -1290,6 +1302,376 @@ def clear_database():
 def get_progress():
     """Get current processing progress status"""
     return jsonify(processing_status)
+
+# Responsible Statistics APIs
+@app.route('/responsible-stats')
+def responsible_stats_page():
+    """Responsible statistics page"""
+    return render_template('responsible_stats.html', APP_VERSION=APP_VERSION)
+
+@app.route('/api/responsible-list')
+def get_responsible_list():
+    """Get all unique Responsible values from database"""
+    try:
+        # Get all unique Responsible values
+        responsibles = db.session.query(OtrsTicket.responsible).distinct().all()
+        responsible_list = [r[0] for r in responsibles if r[0] is not None and r[0] != '']
+        
+        return jsonify({
+            'success': True,
+            'responsibles': sorted(responsible_list)
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error getting responsible list: {str(e)}'
+        }), 500
+
+@app.route('/api/responsible-config', methods=['GET'])
+def get_responsible_config():
+    """Get user's Responsible configuration"""
+    try:
+        user_ip = request.remote_addr
+        config = ResponsibleConfig.query.filter_by(user_identifier=user_ip).first()
+        
+        if config:
+            import json
+            selected_responsibles = json.loads(config.selected_responsibles)
+        else:
+            selected_responsibles = []
+            
+        return jsonify({
+            'success': True,
+            'selectedResponsibles': selected_responsibles
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error getting responsible config: {str(e)}'
+        }), 500
+
+@app.route('/api/responsible-config', methods=['POST'])
+def save_responsible_config():
+    """Save user's Responsible configuration"""
+    try:
+        data = request.get_json()
+        selected_responsibles = data.get('selectedResponsibles', [])
+        user_ip = request.remote_addr
+        
+        import json
+        
+        # Check if config already exists
+        config = ResponsibleConfig.query.filter_by(user_identifier=user_ip).first()
+        
+        if config:
+            # Update existing config
+            config.selected_responsibles = json.dumps(selected_responsibles)
+            config.updated_at = datetime.utcnow()
+        else:
+            # Create new config
+            config = ResponsibleConfig(
+                user_identifier=user_ip,
+                selected_responsibles=json.dumps(selected_responsibles)
+            )
+            db.session.add(config)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Configuration saved successfully'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': f'Error saving responsible config: {str(e)}'
+        }), 500
+
+@app.route('/api/responsible-stats', methods=['POST'])
+def get_responsible_stats():
+    """Get statistics for selected Responsible persons"""
+    try:
+        data = request.get_json()
+        period = data.get('period', 'day')  # day/week/month
+        selected_responsibles = data.get('selectedResponsibles', [])
+        
+        if not selected_responsibles:
+            return jsonify({
+                'success': True,
+                'stats': {},
+                'message': 'No responsible persons selected'
+            })
+        
+        # Build query based on period
+        if period == 'day':
+            # Group by responsible and date
+            stats_query = db.session.query(
+                OtrsTicket.responsible,
+                db.func.date(OtrsTicket.created_date).label('period'),
+                db.func.count(OtrsTicket.id).label('count')
+            ).filter(
+                OtrsTicket.responsible.in_(selected_responsibles),
+                OtrsTicket.created_date.isnot(None)
+            ).group_by(
+                OtrsTicket.responsible,
+                db.func.date(OtrsTicket.created_date)
+            ).order_by(
+                OtrsTicket.responsible,
+                db.func.date(OtrsTicket.created_date)
+            )
+            
+        elif period == 'week':
+            # Group by responsible and week
+            stats_query = db.session.query(
+                OtrsTicket.responsible,
+                db.func.strftime('%Y-%W', OtrsTicket.created_date).label('period'),
+                db.func.count(OtrsTicket.id).label('count')
+            ).filter(
+                OtrsTicket.responsible.in_(selected_responsibles),
+                OtrsTicket.created_date.isnot(None)
+            ).group_by(
+                OtrsTicket.responsible,
+                db.func.strftime('%Y-%W', OtrsTicket.created_date)
+            ).order_by(
+                OtrsTicket.responsible,
+                db.func.strftime('%Y-%W', OtrsTicket.created_date)
+            )
+            
+        elif period == 'month':
+            # Group by responsible and month
+            stats_query = db.session.query(
+                OtrsTicket.responsible,
+                db.func.strftime('%Y-%m', OtrsTicket.created_date).label('period'),
+                db.func.count(OtrsTicket.id).label('count')
+            ).filter(
+                OtrsTicket.responsible.in_(selected_responsibles),
+                OtrsTicket.created_date.isnot(None)
+            ).group_by(
+                OtrsTicket.responsible,
+                db.func.strftime('%Y-%m', OtrsTicket.created_date)
+            ).order_by(
+                OtrsTicket.responsible,
+                db.func.strftime('%Y-%m', OtrsTicket.created_date)
+            )
+        
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid period specified'
+            }), 400
+        
+        # Execute query and format results
+        results = stats_query.all()
+        stats = {}
+        
+        for responsible, period, count in results:
+            if responsible not in stats:
+                stats[responsible] = {}
+            stats[responsible][period] = count
+        
+        # Calculate totals for each responsible
+        totals = {}
+        for responsible in selected_responsibles:
+            total_count = OtrsTicket.query.filter(
+                OtrsTicket.responsible == responsible
+            ).count()
+            totals[responsible] = total_count
+        
+        return jsonify({
+            'success': True,
+            'stats': stats,
+            'totals': totals,
+            'period': period
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error getting responsible stats: {str(e)}'
+        }), 500
+
+@app.route('/api/responsible-details', methods=['POST'])
+def get_responsible_details():
+    """Get ticket details for a specific responsible person and period"""
+    try:
+        data = request.get_json()
+        responsible = data.get('responsible')
+        period = data.get('period')
+        time_value = data.get('timeValue')  # Specific date, week, or month
+        
+        if not responsible or not period or not time_value:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required parameters'
+            }), 400
+        
+        # Build query based on period
+        query = OtrsTicket.query.filter(OtrsTicket.responsible == responsible)
+        
+        if period == 'day':
+            # Filter by specific date
+            query = query.filter(db.func.date(OtrsTicket.created_date) == time_value)
+        elif period == 'week':
+            # Filter by specific week (format: YYYY-WW)
+            year, week = time_value.split('-')
+            query = query.filter(db.func.strftime('%Y-%W', OtrsTicket.created_date) == time_value)
+        elif period == 'month':
+            # Filter by specific month (format: YYYY-MM)
+            query = query.filter(db.func.strftime('%Y-%m', OtrsTicket.created_date) == time_value)
+        
+        # Get tickets
+        tickets = query.order_by(OtrsTicket.created_date.desc()).all()
+        
+        # Prepare details
+        details = []
+        for ticket in tickets:
+            detail = {
+                'ticket_number': ticket.ticket_number or 'N/A',
+                'created': ticket.created_date.isoformat() if ticket.created_date else 'N/A',
+                'closed': ticket.closed_date.isoformat() if ticket.closed_date else 'N/A',
+                'state': ticket.state or 'N/A',
+                'priority': ticket.priority or 'N/A',
+                'title': ticket.title or 'N/A',
+                'queue': ticket.queue or 'N/A'
+            }
+            details.append(detail)
+        
+        return jsonify({
+            'success': True,
+            'details': details,
+            'count': len(details)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error getting responsible details: {str(e)}'
+        }), 500
+
+@app.route('/api/export-responsible-excel', methods=['POST'])
+def export_responsible_excel():
+    """Export Responsible statistics to Excel"""
+    try:
+        data = request.get_json()
+        period = data.get('period', 'day')
+        selected_responsibles = data.get('selectedResponsibles', [])
+        stats_data = data.get('statsData', {})
+        totals_data = data.get('totalsData', {})
+        
+        import pandas as pd
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Summary sheet
+            summary_data = []
+            for responsible, total in totals_data.items():
+                summary_data.append({
+                    'Responsible': responsible,
+                    'Total Tickets': total
+                })
+            
+            pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
+            
+            # Detailed statistics sheet
+            detailed_data = []
+            for responsible, periods in stats_data.items():
+                for period_name, count in periods.items():
+                    detailed_data.append({
+                        'Responsible': responsible,
+                        'Period': period_name,
+                        'Count': count
+                    })
+            
+            pd.DataFrame(detailed_data).to_excel(writer, sheet_name='Detailed Stats', index=False)
+            
+            # Configuration sheet
+            config_data = [{
+                'Export Time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'Period': period,
+                'Selected Responsibles': ', '.join(selected_responsibles)
+            }]
+            pd.DataFrame(config_data).to_excel(writer, sheet_name='Configuration', index=False)
+        
+        output.seek(0)
+        filename = f"responsible_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error exporting Excel: {str(e)}'
+        }), 500
+
+@app.route('/api/export-responsible-txt', methods=['POST'])
+def export_responsible_txt():
+    """Export Responsible statistics to Text"""
+    try:
+        data = request.get_json()
+        period = data.get('period', 'day')
+        selected_responsibles = data.get('selectedResponsibles', [])
+        stats_data = data.get('statsData', {})
+        totals_data = data.get('totalsData', {})
+        
+        # Create text content
+        content = []
+        content.append("=" * 60)
+        content.append("RESPONSIBLE WORKLOAD STATISTICS REPORT")
+        content.append("=" * 60)
+        content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        content.append(f"Period: {period}")
+        content.append(f"Selected Responsibles: {', '.join(selected_responsibles)}")
+        content.append("")
+        
+        # Summary section
+        content.append("SUMMARY")
+        content.append("-" * 30)
+        content.append("Responsible\tTotal Tickets")
+        content.append("-" * 30)
+        for responsible, total in totals_data.items():
+            content.append(f"{responsible}\t{total}")
+        content.append("")
+        
+        # Detailed statistics
+        content.append("DETAILED STATISTICS")
+        content.append("-" * 30)
+        content.append("Responsible\tPeriod\tCount")
+        content.append("-" * 30)
+        for responsible, periods in stats_data.items():
+            for period_name, count in periods.items():
+                content.append(f"{responsible}\t{period_name}\t{count}")
+        content.append("")
+        
+        # Convert to text file
+        text_content = "\n".join(content)
+        text_buffer = io.BytesIO()
+        text_buffer.write(text_content.encode('utf-8'))
+        text_buffer.seek(0)
+        
+        filename = f"responsible_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        
+        return send_file(
+            text_buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='text/plain'
+        )
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Error exporting text: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

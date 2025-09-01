@@ -258,6 +258,11 @@
         <footer class="footer">
             <p>&copy; 2025 OTRS Ticket Analysis System | Built with Flask and Pandas by Jacky</p>
             <p class="version-info">Version: {{ APP_VERSION }}</p>
+            <div class="footer-links">
+                <a href="{{ url_for('database_page') }}">数据库统计</a> | 
+                <a href="{{ url_for('responsible_stats_page') }}">Responsible统计</a> | 
+                <a href="{{ url_for('view_uploads') }}">上传记录</a>
+            </div>
         </footer>
     </div>
 

@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Responsible Statistics - OTRS Ticket Analysis</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <style>
+        .responsible-card {
+            transition: all 0.3s ease;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .responsible-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        .responsible-header {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            color: #212529;
+            padding: 15px;
+            border-radius: 8px 8px 0 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .responsible-body {
+            padding: 15px;
+        }
+        .period-selector {
+            background: #ffffff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid #dee2e6;
+        }
+        .stats-table {
+            font-size: 0.9rem;
+        }
+        .stats-table th {
+            background-color: #ffffff;
+            font-weight: 600;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .stats-table td {
+            background-color: #ffffff;
+        }
+        .clickable-count {
+            cursor: pointer;
+            color: #0d6efd;
+            text-decoration: underline;
+        }
+        .clickable-count:hover {
+            color: #0a58ca;
+        }
+        .export-buttons {
+            margin-top: 20px;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+        
+        /* Modal table styles */
+        .modal-body .table th {
+            background-color: #ffffff;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .modal-body .table td {
+            background-color: #ffffff;
+        }
+        .modal-body .table-striped tbody tr:nth-of-type(odd) {
+            background-color: #f8f9fa;
+        }
+        .modal-body .table-hover tbody tr:hover {
+            background-color: #e9ecef;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="bi bi-bar-chart-fill me-2"></i>
+                OTRS Ticket Analysis
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="{{ url_for('index') }}">首页</a>
+                <a class="nav-link" href="{{ url_for('database_page') }}">数据库统计</a>
+                <a class="nav-link active" href="{{ url_for('responsible_stats_page') }}">Responsible统计</a>
+                <a class="nav-link" href="{{ url_for('view_uploads') }}">上传记录</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h2><i class="bi bi-people-fill me-2"></i>Responsible 工作量统计</h2>
+                    <span class="badge bg-secondary">v{{ APP_VERSION }}</span>
+                </div>
+
+                <!-- Period Selector -->
+                <div class="period-selector">
+                    <div class="row align-items-center">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">统计周期:</label>
+                            <select class="form-select" id="periodSelect">
+                                <option value="day">按天统计</option>
+                                <option value="week">按周统计</option>
+                                <option value="month">按月统计</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">选择Responsible人员:</label>
+                            <div class="d-flex flex-wrap gap-2" id="responsibleCheckboxes">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="selectAll">
+                                    <label class="form-check-label" for="selectAll">全选</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-primary w-100" onclick="loadStats()">
+                                <i class="bi bi-arrow-repeat me-1"></i>加载统计
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary Statistics -->
+                <div id="summaryContainer" class="mt-4" style="display: none;">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">
+                                <i class="bi bi-bar-chart me-2"></i>
+                                汇总统计表
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>排名</th>
+                                            <th>Responsible人员</th>
+                                            <th>处理工单总数</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="summaryTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Statistics -->
+                <div id="statsContainer" class="mt-4">
+                    <div class="alert alert-info" id="noDataAlert">
+                        <i class="bi bi-info-circle me-2"></i>
+                        请选择Responsible人员并点击"加载统计"按钮查看数据
+                    </div>
+                </div>
+
+                <!-- Export Buttons -->
+                <div class="export-buttons text-end" id="exportButtons" style="display: none;">
+                    <button class="btn btn-success me-2" onclick="exportToExcel()">
+                        <i class="bi bi-file-earmark-excel me-1"></i>导出Excel
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="exportToTxt()">
+                        <i class="bi bi-file-earmark-text me-1"></i>导出文本
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">正在加载数据...</p>
+        </div>
+    </div>
+
+    <!-- Ticket Details Modal -->
+    <div class="modal fade" id="ticketDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="modalTitle">工单详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>工单号</th>
+                                    <th>创建时间</th>
+                                    <th>关闭时间</th>
+                                    <th>状态</th>
+                                    <th>优先级</th>
+                                    <th>标题</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ticketDetailsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentStats = {};
+        let currentTotals = {};
+        let currentPeriod = 'day';
+        let currentSelectedResponsibles = [];
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadResponsibleList();
+            loadUserConfig();
+            
+            // Select all checkbox handler
+            document.getElementById('selectAll').addEventListener('change', function() {
+                const checkboxes = document.querySelectorAll('#responsibleCheckboxes input[type="checkbox"]:not(#selectAll)');
+                checkboxes.forEach(checkbox => {
+                    checkbox.checked = this.checked;
+                });
+            });
+        });
+
+        // Load responsible list from API
+        async function loadResponsibleList() {
+            try {
+                const response = await fetch('/api/responsible-list');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const container = document.getElementById('responsibleCheckboxes');
+                    data.responsibles.forEach(responsible => {
+                        const div = document.createElement('div');
+                        div.className = 'form-check';
+                        div.innerHTML = `
+                            <input class="form-check-input responsible-checkbox" type="checkbox" 
+                                   value="${responsible}" id="responsible-${responsible}">
+                            <label class="form-check-label" for="responsible-${responsible}">
+                                ${responsible}
+                            </label>
+                        `;
+                        container.appendChild(div);
+                    });
+                } else {
+                    showError('加载Responsible列表失败: ' + data.error);
+                }
+            } catch (error) {
+                showError('网络错误: ' + error.message);
+            }
+        }
+
+        // Load user configuration
+        async function loadUserConfig() {
+            try {
+                const response = await fetch('/api/responsible-config');
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentSelectedResponsibles = data.selectedResponsibles;
+                    // Check the checkboxes based on saved config
+                    currentSelectedResponsibles.forEach(responsible => {
+                        const checkbox = document.querySelector(`#responsible-${responsible}`);
+                        if (checkbox) {
+                            checkbox.checked = true;
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('加载用户配置失败:', error);
+            }
+        }
+
+        // Save user configuration
+        async function saveUserConfig() {
+            const selected = getSelectedResponsibles();
+            try {
+                const response = await fetch('/api/responsible-config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        selectedResponsibles: selected
+                    })
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    console.error('保存配置失败:', data.error);
+                }
+            } catch (error) {
+                console.error('保存配置失败:', error);
+            }
+        }
+
+        // Get selected responsibles
+        function getSelectedResponsibles() {
+            const checkboxes = document.querySelectorAll('#responsibleCheckboxes input.responsible-checkbox:checked');
+            return Array.from(checkboxes).map(cb => cb.value);
+        }
+
+        // Load statistics
+        async function loadStats() {
+            const selected = getSelectedResponsibles();
+            if (selected.length === 0) {
+                showError('请至少选择一个Responsible人员');
+                return;
+            }
+
+            currentPeriod = document.getElementById('periodSelect').value;
+            currentSelectedResponsibles = selected;
+            
+            showLoading(true);
+            
+            try {
+                const response = await fetch('/api/responsible-stats', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        period: currentPeriod,
+                        selectedResponsibles: selected
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentStats = data.stats;
+                    currentTotals = data.totals;
+                    displayStats(data.stats, data.totals, data.period);
+                    document.getElementById('exportButtons').style.display = 'block';
+                    saveUserConfig(); // Save the current selection
+                } else {
+                    showError('加载统计失败: ' + data.error);
+                }
+            } catch (error) {
+                showError('网络错误: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Display statistics
+        function displayStats(stats, totals, period) {
+            const container = document.getElementById('statsContainer');
+            const summaryContainer = document.getElementById('summaryContainer');
+            container.innerHTML = '';
+            summaryContainer.style.display = 'none';
+
+            if (Object.keys(stats).length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        没有找到相关数据
+                    </div>
+                `;
+                return;
+            }
+
+            // Display summary statistics
+            displaySummaryTable(totals);
+            summaryContainer.style.display = 'block';
+
+            // Display detailed statistics
+            Object.keys(stats).forEach(responsible => {
+                const card = document.createElement('div');
+                card.className = 'responsible-card';
+                
+                const periods = stats[responsible];
+                const total = totals[responsible] || 0;
+                
+                let tableRows = '';
+                Object.keys(periods).forEach(periodKey => {
+                    const count = periods[periodKey];
+                    tableRows += `
+                        <tr>
+                            <td>${periodKey}</td>
+                            <td>
+                                <span class="clickable-count" 
+                                      onclick="showTicketDetails('${responsible}', '${period}', '${periodKey}')">
+                                    ${count}
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                card.innerHTML = `
+                    <div class="responsible-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-person-circle me-2"></i>
+                            ${responsible}
+                            <span class="badge bg-light text-dark ms-2">总计: ${total}</span>
+                        </h5>
+                    </div>
+                    <div class="responsible-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm stats-table">
+                                <thead>
+                                    <tr>
+                                        <th>${getPeriodLabel(period)}</th>
+                                        <th>工单数量</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tableRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+        // Display summary table
+        function displaySummaryTable(totals) {
+            const summaryBody = document.getElementById('summaryTableBody');
+            summaryBody.innerHTML = '';
+
+            // Convert totals to array and sort by count descending
+            const sortedTotals = Object.entries(totals)
+                .sort((a, b) => b[1] - a[1])
+                .map(([responsible, count], index) => ({
+                    rank: index + 1,
+                    responsible,
+                    count
+                }));
+
+            sortedTotals.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.rank}</td>
+                    <td>${item.responsible}</td>
+                    <td><strong>${item.count}</strong></td>
+                `;
+                summaryBody.appendChild(row);
+            });
+        }
+
+        // Get period label
+        function getPeriodLabel(period) {
+            switch(period) {
+                case 'day': return '日期';
+                case 'week': return '周次';
+                case 'month': return '月份';
+                default: return '周期';
+            }
+        }
+
+        // Show ticket details
+        async function showTicketDetails(responsible, period, timeValue) {
+            showLoading(true);
+            
+            try {
+                const response = await fetch('/api/responsible-details', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        responsible: responsible,
+                        period: period,
+                        timeValue: timeValue
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    const modalTitle = document.getElementById('modalTitle');
+                    const detailsBody = document.getElementById('ticketDetailsBody');
+                    
+                    modalTitle.textContent = `${responsible} - ${timeValue} 工单详情 (${data.count} 条)`;
+                    detailsBody.innerHTML = '';
+                    
+                    data.details.forEach(ticket => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${ticket.ticket_number}</td>
+                            <td>${ticket.created}</td>
+                            <td>${ticket.closed}</td>
+                            <td>${ticket.state}</td>
+                            <td>${ticket.priority}</td>
+                            <td>${ticket.title}</td>
+                        `;
+                        detailsBody.appendChild(row);
+                    });
+                    
+                    const modal = new bootstrap.Modal(document.getElementById('ticketDetailsModal'));
+                    modal.show();
+                } else {
+                    showError('加载详情失败: ' + data.error);
+                }
+            } catch (error) {
+                showError('网络错误: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Export to Excel
+        async function exportToExcel() {
+            try {
+                const response = await fetch('/api/export-responsible-excel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        period: currentPeriod,
+                        selectedResponsibles: currentSelectedResponsibles,
+                        statsData: currentStats,
+                        totalsData: currentTotals
+                    })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `responsible_stats_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.xlsx`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    showError('导出Excel失败');
+                }
+            } catch (error) {
+                showError('导出失败: ' + error.message);
+            }
+        }
+
+        // Export to Text
+        async function exportToTxt() {
+            try {
+                const response = await fetch('/api/export-responsible-txt', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        period: currentPeriod,
+                        selectedResponsibles: currentSelectedResponsibles,
+                        statsData: currentStats,
+                        totalsData: currentTotals
+                    })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `responsible_stats_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    showError('导出文本失败');
+                }
+            } catch (error) {
+                showError('导出失败: ' + error.message);
+            }
+        }
+
+        // Show loading overlay
+        function showLoading(show) {
+            document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+        }
+
+        // Show error message
+        function showError(message) {
+            const container = document.getElementById('statsContainer');
+            container.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    ${message}
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
