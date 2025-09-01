@@ -1403,56 +1403,56 @@ def get_responsible_stats():
                 'message': 'No responsible persons selected'
             })
         
-        # Build query based on period
+        # Build query based on period - use closed_date for workload calculation
         if period == 'day':
-            # Group by responsible and date
+            # Group by responsible and closed date
             stats_query = db.session.query(
                 OtrsTicket.responsible,
-                db.func.date(OtrsTicket.created_date).label('period'),
+                db.func.date(OtrsTicket.closed_date).label('period'),
                 db.func.count(OtrsTicket.id).label('count')
             ).filter(
                 OtrsTicket.responsible.in_(selected_responsibles),
-                OtrsTicket.created_date.isnot(None)
+                OtrsTicket.closed_date.isnot(None)  # Only count closed tickets
             ).group_by(
                 OtrsTicket.responsible,
-                db.func.date(OtrsTicket.created_date)
+                db.func.date(OtrsTicket.closed_date)
             ).order_by(
                 OtrsTicket.responsible,
-                db.func.date(OtrsTicket.created_date)
+                db.func.date(OtrsTicket.closed_date)
             )
             
         elif period == 'week':
-            # Group by responsible and week
+            # Group by responsible and closed week
             stats_query = db.session.query(
                 OtrsTicket.responsible,
-                db.func.strftime('%Y-%W', OtrsTicket.created_date).label('period'),
+                db.func.strftime('%Y-%W', OtrsTicket.closed_date).label('period'),
                 db.func.count(OtrsTicket.id).label('count')
             ).filter(
                 OtrsTicket.responsible.in_(selected_responsibles),
-                OtrsTicket.created_date.isnot(None)
+                OtrsTicket.closed_date.isnot(None)  # Only count closed tickets
             ).group_by(
                 OtrsTicket.responsible,
-                db.func.strftime('%Y-%W', OtrsTicket.created_date)
+                db.func.strftime('%Y-%W', OtrsTicket.closed_date)
             ).order_by(
                 OtrsTicket.responsible,
-                db.func.strftime('%Y-%W', OtrsTicket.created_date)
+                db.func.strftime('%Y-%W', OtrsTicket.closed_date)
             )
             
         elif period == 'month':
-            # Group by responsible and month
+            # Group by responsible and closed month
             stats_query = db.session.query(
                 OtrsTicket.responsible,
-                db.func.strftime('%Y-%m', OtrsTicket.created_date).label('period'),
+                db.func.strftime('%Y-%m', OtrsTicket.closed_date).label('period'),
                 db.func.count(OtrsTicket.id).label('count')
             ).filter(
                 OtrsTicket.responsible.in_(selected_responsibles),
-                OtrsTicket.created_date.isnot(None)
+                OtrsTicket.closed_date.isnot(None)  # Only count closed tickets
             ).group_by(
                 OtrsTicket.responsible,
-                db.func.strftime('%Y-%m', OtrsTicket.created_date)
+                db.func.strftime('%Y-%m', OtrsTicket.closed_date)
             ).order_by(
                 OtrsTicket.responsible,
-                db.func.strftime('%Y-%m', OtrsTicket.created_date)
+                db.func.strftime('%Y-%m', OtrsTicket.closed_date)
             )
         
         else:
@@ -1506,18 +1506,18 @@ def get_responsible_details():
                 'error': 'Missing required parameters'
             }), 400
         
-        # Build query based on period
+        # Build query based on period - use closed_date for workload calculation
         query = OtrsTicket.query.filter(OtrsTicket.responsible == responsible)
         
         if period == 'day':
-            # Filter by specific date
-            query = query.filter(db.func.date(OtrsTicket.created_date) == time_value)
+            # Filter by specific closed date
+            query = query.filter(db.func.date(OtrsTicket.closed_date) == time_value)
         elif period == 'week':
-            # Filter by specific week (format: YYYY-WW)
-            query = query.filter(db.func.strftime('%Y-%W', OtrsTicket.created_date) == time_value)
+            # Filter by specific closed week (format: YYYY-WW)
+            query = query.filter(db.func.strftime('%Y-%W', OtrsTicket.closed_date) == time_value)
         elif period == 'month':
-            # Filter by specific month (format: YYYY-MM)
-            query = query.filter(db.func.strftime('%Y-%m', OtrsTicket.created_date) == time_value)
+            # Filter by specific closed month (format: YYYY-MM)
+            query = query.filter(db.func.strftime('%Y-%m', OtrsTicket.closed_date) == time_value)
         else:
             return jsonify({
                 'success': False,
