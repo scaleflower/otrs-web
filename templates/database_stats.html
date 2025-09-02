@@ -10,25 +10,31 @@
 </head>
 <body>
     <div class="container">
+        <!-- Unified Navigation -->
+        <nav class="unified-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}" class="nav-link">首页</a>
+                <a href="{{ url_for('database_page') }}" class="nav-link active">数据库统计</a>
+                <a href="{{ url_for('responsible_stats') }}" class="nav-link">负责人统计</a>
+                <a href="{{ url_for('daily_statistics_page') }}" class="nav-link">每日统计</a>
+                <a href="{{ url_for('view_uploads') }}" class="nav-link">上传记录</a>
+            </div>
+            <div class="header-actions">
+                <a href="/" class="btn">
+                    <i class="fas fa-upload"></i> Upload Excel
+                </a>
+                <button id="refreshBtn" class="btn">
+                    <i class="fas fa-sync-alt"></i> Refresh Data
+                </button>
+            </div>
+        </nav>
+
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1><i class="fas fa-chart-line"></i> OTRS Ticket Analysis System</h1>
-                <p>View real-time statistics from database</p>
-                <div class="header-nav">
-                    <a href="{{ url_for('index') }}">首页</a>
-                    <a href="{{ url_for('database_page') }}">数据库统计</a>
-                    <a href="{{ url_for('responsible_stats') }}">负责人统计</a>
-                    <a href="{{ url_for('daily_statistics_page') }}">每日统计</a>
-                    <a href="{{ url_for('view_uploads') }}">上传记录</a>
-                </div>
-                <div class="header-actions">
-                    <a href="/" class="btn btn-secondary">
-                        <i class="fas fa-upload"></i> Upload Excel
-                    </a>
-                    <button id="refreshBtn" class="btn btn-primary">
-                        <i class="fas fa-sync-alt"></i> Refresh Data
-                    </button>
+                <div class="header-title">
+                    <h1><i class="fas fa-chart-line"></i> OTRS Ticket Analysis</h1>
+                    <p>View real-time statistics from database</p>
                 </div>
             </div>
         </header>
@@ -293,8 +299,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>&copy; 2025 OTRS Ticket Analysis System | Built with Flask and Pandas by Jacky</p>
-            <p class="version-info">Version: {{ APP_VERSION }}</p>
+            <p>OTRS Ticket Analysis System v{{ APP_VERSION }} | © 2025</p>
         </footer>
     </div>
 

@@ -3,29 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OTRS Ticket Analysis System</title>
+    <title>OTRS Ticket Analysis</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
+        <!-- Unified Navigation -->
+        <nav class="unified-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}" class="nav-link active">首页</a>
+                <a href="{{ url_for('database_page') }}" class="nav-link">数据库统计</a>
+                <a href="{{ url_for('responsible_stats') }}" class="nav-link">负责人统计</a>
+                <a href="{{ url_for('daily_statistics_page') }}" class="nav-link">每日统计</a>
+                <a href="{{ url_for('view_uploads') }}" class="nav-link">上传记录</a>
+            </div>
+        </nav>
+
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1><i class="fas fa-chart-line"></i> OTRS Ticket Analysis System</h1>
-                <p>Upload Excel files to get detailed ticket statistics and visual reports</p>
-                <div class="header-nav">
-                    <a href="{{ url_for('database_page') }}">数据库统计</a>
-                    <a href="{{ url_for('responsible_stats') }}">负责人统计</a>
-                    <a href="{{ url_for('daily_statistics_page') }}">每日统计</a>
-                    <a href="{{ url_for('view_uploads') }}">上传记录</a>
+                <div class="header-title">
+                    <h1><i class="fas fa-chart-line"></i> OTRS Ticket Analysis</h1>
+                    <p>Upload Excel files to get detailed ticket statistics and visual reports</p>
                 </div>
             </div>
         </header>
 
         <!-- Main Content -->
         <main class="main-content">
+            <!-- Latest Upload Info Section -->
+            <section id="latestUploadSection" class="latest-upload-section">
+                <div class="latest-upload-card">
+                    <div class="latest-upload-header">
+                        <h3><i class="fas fa-history"></i> 最近更新信息</h3>
+                    </div>
+                    <div class="latest-upload-content" id="latestUploadContent">
+                        <div class="upload-info-loading">
+                            <i class="fas fa-spinner fa-spin"></i> 加载中...
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Upload Section -->
             <section class="upload-section" style="display: none;">
                 <div class="upload-card">
@@ -262,8 +283,7 @@
 
         <!-- Footer -->
         <footer class="footer">
-            <p>&copy; 2025 OTRS Ticket Analysis System | Built with Flask and Pandas by Jacky</p>
-            <p class="version-info">Version: {{ APP_VERSION }}</p>
+            <p>OTRS Ticket Analysis System v{{ APP_VERSION }} | © 2025</p>
         </footer>
     </div>
 

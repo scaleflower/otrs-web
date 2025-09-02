@@ -10,21 +10,30 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
-                <i class="bi bi-bar-chart-fill"></i> OTRS Ticket Analysis
-            </a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="{{ url_for('index') }}">Home</a>
-                <a class="nav-link" href="{{ url_for('database_page') }}">Database Stats</a>
-                <a class="nav-link" href="{{ url_for('responsible_stats') }}">Responsible Stats</a>
-                <a class="nav-link active" href="{{ url_for('daily_statistics_page') }}">Daily Statistics</a>
+    <div class="container">
+        <!-- Unified Navigation -->
+        <nav class="unified-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}" class="nav-link">首页</a>
+                <a href="{{ url_for('database_page') }}" class="nav-link">数据库统计</a>
+                <a href="{{ url_for('responsible_stats') }}" class="nav-link">负责人统计</a>
+                <a href="{{ url_for('daily_statistics_page') }}" class="nav-link active">每日统计</a>
+                <a href="{{ url_for('view_uploads') }}" class="nav-link">上传记录</a>
             </div>
-        </div>
-    </nav>
+        </nav>
 
-    <div class="container mt-4">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="header-title">
+                    <h1><i class="fas fa-chart-line"></i> OTRS Ticket Analysis</h1>
+                    <p>每日统计数据自动计算和调度管理</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
         <div class="row">
             <div class="col-12">
                 <div class="card">
@@ -171,7 +180,7 @@
 
     <footer class="bg-dark text-light text-center py-3 mt-5">
         <div class="container">
-            <p>OTRS Ticket Analysis System v{{ APP_VERSION }} | &copy; 2025</p>
+            <p>OTRS Ticket Analysis System v{{ APP_VERSION }} | © 2025</p>
         </div>
     </footer>
 
