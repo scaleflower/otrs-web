@@ -3,56 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Uploaded Sessions - OTRS Ticket Analysis System</title>
+    <title>Upload History - OTRS Ticket Analysis</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
+        <!-- Unified Navigation -->
+        <nav class="unified-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}" class="nav-link">首页</a>
+                <a href="{{ url_for('database_page') }}" class="nav-link">数据库统计</a>
+                <a href="{{ url_for('responsible_stats') }}" class="nav-link">负责人统计</a>
+                <a href="{{ url_for('daily_statistics_page') }}" class="nav-link">每日统计</a>
+                <a href="{{ url_for('view_uploads') }}" class="nav-link active">上传记录</a>
+            </div>
+        </nav>
+
         <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <h1><i class="fas fa-database"></i> Uploaded Sessions</h1>
-                <p>View all uploaded Excel files and their analysis data</p>
+                <div class="header-title">
+                    <h1><i class="fas fa-history"></i> OTRS Ticket Analysis</h1>
+                    <p>历史上传记录和文件详情</p>
+                </div>
             </div>
         </header>
-
-        <!-- Navigation -->
-        <nav class="nav">
-            <a href="/" class="nav-link"><i class="fas fa-home"></i> Home</a>
-            <a href="/uploads" class="nav-link active"><i class="fas fa-database"></i> Uploads</a>
-        </nav>
 
         <!-- Main Content -->
         <main class="main-content">
             {% if upload_sessions %}
-            <div class="upload-sessions">
-                <h2>Uploaded Excel Files</h2>
-                <div class="sessions-grid">
-                    {% for session in upload_sessions %}
-                    <div class="session-card">
-                        <div class="session-header">
-                            <h3>{{ session.filename }}</h3>
-                            <span class="session-time">{{ session.upload_time.strftime('%Y-%m-%d %H:%M:%S') }}</span>
-                        </div>
-                        <div class="session-info">
-                            <div class="info-item">
-                                <i class="fas fa-file-excel"></i>
-                                <span>{{ session.total_records }} records</span>
-                            </div>
-                            <div class="info-item">
-                                <i class="fas fa-id-card"></i>
-                                <span>Session: {{ session.session_id[:8] }}...</span>
-                            </div>
-                        </div>
-                        <div class="session-actions">
-                            <a href="/upload/{{ session.session_id }}" class="btn btn-primary">
-                                <i class="fas fa-eye"></i> View Details
-                            </a>
-                        </div>
-                    </div>
-                    {% endfor %}
+            <div class="upload-history">
+                <h2>上传历史记录</h2>
+                <div class="table-container">
+                    <table class="upload-table">
+                        <thead>
+                            <tr>
+                                <th>文件名</th>
+                                <th>上传时间</th>
+                                <th>记录数量</th>
+                                <th>导入模式</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for session in upload_sessions %}
+                            <tr>
+                                <td class="filename-cell">
+                                    <i class="fas fa-file-excel"></i>
+                                    {{ session.filename }}
+                                </td>
+                                <td class="time-cell">
+                                    {{ session.upload_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                                </td>
+                                <td class="count-cell">
+                                    {{ session.record_count }}
+                                </td>
+                                <td class="mode-cell">
+                                    {% if session.import_mode %}
+                                        {{ session.import_mode }}
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td class="actions-cell">
+                                    <a href="/upload/{{ session.filename }}" class="btn btn-sm btn-primary">
+                                        <i class="fas fa-eye"></i> 查看详情
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
             {% else %}
@@ -60,10 +83,10 @@
                 <div class="empty-icon">
                     <i class="fas fa-database"></i>
                 </div>
-                <h3>No Uploads Yet</h3>
-                <p>No Excel files have been uploaded yet. Upload your first file to see it here.</p>
+                <h3>暂无上传记录</h3>
+                <p>还没有上传过Excel文件。请先上传文件来查看历史记录。</p>
                 <a href="/" class="btn btn-primary">
-                    <i class="fas fa-cloud-upload-alt"></i> Upload Excel File
+                    <i class="fas fa-cloud-upload-alt"></i> 上传Excel文件
                 </a>
             </div>
             {% endif %}

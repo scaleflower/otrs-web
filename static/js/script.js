@@ -23,6 +23,7 @@ let emptyFirstResponseChart = null;
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     initializeEventListeners();
+    loadLatestUploadInfo();
 });
 
 function initializeEventListeners() {
@@ -639,6 +640,63 @@ function handleClearDatabase() {
             clearDatabaseBtn.disabled = false;
         }, 2000);
     });
+}
+
+// Load latest upload information
+function loadLatestUploadInfo() {
+    const latestUploadContent = document.getElementById('latestUploadContent');
+    if (!latestUploadContent) return; // Exit if element doesn't exist
+    
+    fetch('/api/latest-upload-info')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('获取最新上传信息失败');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success && data.has_data && data.latest_upload) {
+                const info = data.latest_upload;
+                latestUploadContent.innerHTML = `
+                    <div class="upload-info-grid">
+                        <div class="upload-info-item">
+                            <h4>上传文件</h4>
+                            <p>${info.filename}</p>
+                        </div>
+                        <div class="upload-info-item">
+                            <h4>更新记录数</h4>
+                            <p>${info.record_count.toLocaleString()} 条</p>
+                        </div>
+                        <div class="upload-info-item">
+                            <h4>上传时间</h4>
+                            <p>${info.upload_time}</p>
+                        </div>
+                        <div class="upload-info-item">
+                            <h4>数据库总记录</h4>
+                            <p>${info.total_records.toLocaleString()} 条</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                latestUploadContent.innerHTML = `
+                    <div class="no-upload-message">
+                        <i class="fas fa-inbox"></i>
+                        <h4>暂无上传记录</h4>
+                        <p>请先上传 Excel 文件来查看数据统计</p>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading latest upload info:', error);
+            latestUploadContent.innerHTML = `
+                <div class="no-upload-message">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <h4>加载失败</h4>
+                    <p>${error.message}</p>
+                </div>
+            `;
+        });
 }
 
 // Add some animation effects

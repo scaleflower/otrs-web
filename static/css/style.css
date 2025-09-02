@@ -1522,6 +1522,131 @@ body {
     }
 }
 
+/* Upload History Table Styles */
+.upload-history h2 {
+    font-size: 1.8rem;
+    margin-bottom: 25px;
+    color: #2c3e50;
+}
+
+.upload-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+}
+
+.upload-table thead {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.upload-table th {
+    color: white;
+    font-weight: 600;
+    padding: 15px 12px;
+    text-align: left;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+}
+
+.upload-table tbody tr {
+    border-bottom: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.upload-table tbody tr:hover {
+    background-color: #f8f9fa;
+    transform: scale(1.01);
+}
+
+.upload-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.upload-table td {
+    padding: 15px 12px;
+    vertical-align: middle;
+    font-size: 0.9rem;
+}
+
+.filename-cell {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.filename-cell i {
+    color: #28a745;
+    margin-right: 8px;
+    font-size: 1.1rem;
+}
+
+.time-cell {
+    color: #6c757d;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+}
+
+.count-cell {
+    color: #495057;
+    font-weight: 500;
+    text-align: center;
+}
+
+.mode-cell {
+    color: #6c757d;
+    font-style: italic;
+    text-align: center;
+}
+
+.actions-cell {
+    text-align: center;
+}
+
+.btn-sm {
+    padding: 8px 16px;
+    font-size: 0.85rem;
+    border-radius: 6px;
+}
+
+/* Responsive table */
+@media (max-width: 768px) {
+    .upload-table {
+        font-size: 0.8rem;
+    }
+    
+    .upload-table th,
+    .upload-table td {
+        padding: 10px 8px;
+    }
+    
+    .filename-cell {
+        max-width: 150px;
+        word-break: break-word;
+    }
+    
+    .time-cell {
+        font-size: 0.75rem;
+    }
+    
+    .btn-sm {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    .upload-table {
+        min-width: 600px;
+    }
+}
+
 /* Utility Classes */
 .text-center {
     text-align: center;

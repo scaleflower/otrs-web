@@ -33,19 +33,31 @@ def index():
 @app.route('/uploads')
 def view_uploads():
     """View all uploaded data sources"""
-    from models import OtrsTicket, db
-    data_sources = OtrsTicket.query.with_entities(
-        OtrsTicket.data_source, 
-        db.func.count(OtrsTicket.id)
-    ).group_by(OtrsTicket.data_source).all()
-    return render_template('uploads.html', data_sources=data_sources)
+    from models import UploadDetail
+    upload_sessions = UploadDetail.query.order_by(UploadDetail.upload_time.desc()).all()
+    return render_template('uploads.html', upload_sessions=upload_sessions)
 
 @app.route('/upload/<filename>')
 def view_upload_details(filename):
     """View details of a specific upload file"""
-    from models import OtrsTicket
+    from models import OtrsTicket, UploadDetail
+    
+    # Find the upload session for this filename
+    upload_session = UploadDetail.query.filter_by(filename=filename).first()
+    
+    if not upload_session:
+        # If no UploadDetail record found, create a mock one for backward compatibility
+        upload_session = type('MockSession', (), {
+            'filename': filename,
+            'upload_time': None,
+            'record_count': 0,
+            'import_mode': 'Unknown'
+        })()
+    
+    # Get tickets for this filename
     tickets = OtrsTicket.query.filter_by(data_source=filename).all()
-    return render_template('upload_details.html', filename=filename, tickets=tickets)
+    
+    return render_template('upload_details.html', upload_session=upload_session, tickets=tickets)
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -568,6 +580,47 @@ def clear_database():
             'success': True,
             'message': message,
             'records_cleared': records_cleared
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/latest-upload-info')
+def api_latest_upload_info():
+    """Get information about the most recent upload"""
+    try:
+        from models import OtrsTicket, UploadDetail, db
+        
+        # Get the latest upload from UploadDetail table
+        latest_upload_detail = UploadDetail.query.order_by(UploadDetail.upload_time.desc()).first()
+        
+        if not latest_upload_detail:
+            return jsonify({
+                'success': True,
+                'has_data': False,
+                'message': '暂无上传记录'
+            })
+        
+        # Get total count and open tickets count from OtrsTicket
+        total_count = OtrsTicket.query.count()
+        open_count = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).count()
+        
+        # Format upload time using server time (no timezone conversion)
+        upload_time = latest_upload_detail.upload_time.strftime('%Y-%m-%d %H:%M:%S') if latest_upload_detail.upload_time else 'Unknown'
+        
+        return jsonify({
+            'success': True,
+            'has_data': True,
+            'latest_upload': {
+                'filename': latest_upload_detail.filename,
+                'record_count': latest_upload_detail.record_count,
+                'upload_time': upload_time,
+                'total_records': total_count,
+                'open_tickets': open_count
+            }
         })
         
     except Exception as e:
