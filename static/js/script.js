@@ -100,21 +100,18 @@ function handleFormSubmit(event) {
     const formData = new FormData();
     formData.append('file', file);
     
-    // Initialize progress tracking
-    let progress = 0;
-    const totalSteps = 7; // Total number of processing steps
-    
-    // Update progress function
-    const updateProgress = (step, message, details = '') => {
-        progress = Math.min(progress + (100 / totalSteps), 100);
-        document.getElementById('progressBar').style.width = `${progress}%`;
-        document.getElementById('progressText').textContent = `${Math.round(progress)}%`;
+    // Function to update progress display
+    const updateProgressDisplay = (progressData) => {
+        const progressPercentage = Math.max(0, Math.min(100, (progressData.current_step / progressData.total_steps) * 100));
+        
+        document.getElementById('progressBar').style.width = `${progressPercentage}%`;
+        document.getElementById('progressText').textContent = `${Math.round(progressPercentage)}%`;
         
         const statusElement = document.getElementById('currentStatus');
         const detailsElement = document.getElementById('statusDetails');
         
-        statusElement.textContent = message;
-        detailsElement.textContent = details;
+        statusElement.textContent = progressData.message || '处理中...';
+        detailsElement.textContent = progressData.details || '';
         
         // Add animation
         statusElement.classList.add('fade-in');
@@ -122,43 +119,40 @@ function handleFormSubmit(event) {
     };
     
     // Function to poll progress from server
+    let isUploadCompleted = false;
     const pollProgress = () => {
-        fetch('/progress')
+        if (isUploadCompleted) return;
+        
+        fetch('/processing-status')
             .then(response => response.json())
             .then(progressData => {
-                if (progressData.current_step > 0) {
-                    const progressPercentage = (progressData.current_step / progressData.total_steps) * 100;
-                    document.getElementById('progressBar').style.width = `${progressPercentage}%`;
-                    document.getElementById('progressText').textContent = `${Math.round(progressPercentage)}%`;
-                    
-                    const statusElement = document.getElementById('currentStatus');
-                    const detailsElement = document.getElementById('statusDetails');
-                    
-                    statusElement.textContent = progressData.message;
-                    detailsElement.textContent = progressData.details;
-                    
-                    // Add animation
-                    statusElement.classList.add('fade-in');
-                    setTimeout(() => statusElement.classList.remove('fade-in'), 500);
-                }
+                // Update progress display
+                updateProgressDisplay(progressData);
                 
-                // Continue polling until progress is complete
-                if (progressData.current_step < progressData.total_steps) {
-                    setTimeout(pollProgress, 1000);
+                // Continue polling until progress is complete or upload is finished
+                if (progressData.current_step < progressData.total_steps && !isUploadCompleted) {
+                    setTimeout(pollProgress, 500); // More frequent updates for better responsiveness
                 }
             })
             .catch(error => {
                 console.error('Error polling progress:', error);
-                // Continue polling even if there's an error
-                setTimeout(pollProgress, 2000);
+                // Continue polling even if there's an error, but less frequently
+                if (!isUploadCompleted) {
+                    setTimeout(pollProgress, 2000);
+                }
             });
     };
     
-    // Start polling progress
-    pollProgress();
+    // Start polling progress immediately
+    setTimeout(pollProgress, 200);
     
-    // Initial progress update
-    updateProgress(0, '开始处理Excel文件...', '正在读取文件信息');
+    // Initial progress display
+    updateProgressDisplay({
+        current_step: 0,
+        total_steps: 7,
+        message: '开始处理Excel文件...',
+        details: '正在读取文件信息'
+    });
     
     // Send AJAX request
     fetch('/upload', {
@@ -175,8 +169,16 @@ function handleFormSubmit(event) {
     })
     .then(data => {
         if (data.success) {
+            // Mark upload as completed to stop polling
+            isUploadCompleted = true;
+            
             // Final progress update
-            updateProgress(totalSteps, '处理完成！', `成功导入 ${data.new_records_count} 条记录`);
+            updateProgressDisplay({
+                current_step: 7,
+                total_steps: 7,
+                message: '处理完成！',
+                details: `成功导入 ${data.new_records_count} 条记录`
+            });
             
             // Small delay to show completion
             setTimeout(() => {
@@ -188,6 +190,7 @@ function handleFormSubmit(event) {
         }
     })
     .catch(error => {
+        isUploadCompleted = true; // Stop polling on error
         showError(error.message);
     });
 }

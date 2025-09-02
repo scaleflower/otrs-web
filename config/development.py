@@ -13,7 +13,7 @@ class DevelopmentConfig(BaseConfig):
     
     # Database settings
     SQLALCHEMY_DATABASE_URI = os.environ.get('DEV_DATABASE_URL') or 'sqlite:///../db/otrs_data.db'
-    SQLALCHEMY_ECHO = True  # Enable SQL query logging in development
+    SQLALCHEMY_ECHO = False  # Disable SQL query logging for better performance during imports
     
     # Logging settings
     LOG_LEVEL = 'DEBUG'
