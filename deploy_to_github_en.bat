@@ -124,14 +124,21 @@ if not errorlevel 1 (
 echo [INFO] Checking Git status...
 git status --porcelain
 
-:: Add all changes, excluding specific files
+:: Add all changes, excluding specific temporary files
 echo [INFO] Adding files to staging area...
 
 :: Add all files
 git add .
 
-:: Exclude database files and temporary files
-git reset HEAD -- "*.db" "db/*.db" "instance/*.db" "logs/*.log" "__pycache__/" "*.pyc" ".DS_Store" "Thumbs.db" >nul 2>&1
+:: Exclude temporary files (keep database files)
+git reset HEAD -- "logs/*.log" "__pycache__/" "*.pyc" ".DS_Store" "Thumbs.db" >nul 2>&1
+
+:: Warning: including database files
+git ls-files --cached | findstr /R "\.db$ \.sqlite$ \.sqlite3$" >nul 2>&1
+if not errorlevel 1 (
+    echo [WARNING] Database files detected and will be committed to GitHub!
+    echo [WARNING] Ensure database files do not contain sensitive data.
+)
 
 :: Show files to be committed
 echo [INFO] Files to be committed:

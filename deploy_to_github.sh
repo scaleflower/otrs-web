@@ -113,12 +113,18 @@ fi
 print_info "检查Git状态..."
 git status --porcelain
 
-# 添加所有更改，但排除特定文件
+# 添加所有更改，但排除特定临时文件
 print_info "添加文件到暂存区..."
 
-# 添加所有文件，但排除数据库文件和临时文件
+# 添加所有文件，但排除临时文件（保留数据库文件）
 git add .
-git reset HEAD -- "*.db" "db/*.db" "instance/*.db" "logs/*.log" "__pycache__/" "*.pyc" ".DS_Store" "Thumbs.db"
+git reset HEAD -- "logs/*.log" "__pycache__/" "*.pyc" ".DS_Store" "Thumbs.db"
+
+# 警告：包含数据库文件
+if git ls-files --cached | grep -E "\.(db|sqlite|sqlite3)$" > /dev/null; then
+    print_warning "检测到数据库文件将被提交到GitHub！"
+    print_warning "确保数据库文件不包含敏感数据。"
+fi
 
 # 显示即将提交的文件
 print_info "即将提交的文件："

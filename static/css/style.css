@@ -59,61 +59,79 @@ body {
 
 /* Unified Navigation System */
 .unified-nav {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 1000;
-    display: flex;
+    position: fixed !important;
+    top: 20px !important;
+    right: 20px !important;
+    z-index: 9999 !important;
+    display: flex !important;
     flex-direction: column;
     align-items: flex-end;
     gap: 12px;
     max-width: calc(100vw - 40px);
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
 }
 
 .nav-links {
-    display: flex;
+    display: flex !important;
     gap: 6px;
     flex-wrap: wrap;
     justify-content: flex-end;
     align-items: center;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none !important;
 }
 
-.nav-link {
-    padding: 11px 18px;
-    background: rgba(255, 255, 255, 0.18);
-    color: white;
-    text-decoration: none;
-    border-radius: 10px;
-    font-weight: 500;
-    font-size: 0.9rem;
+.unified-nav .nav-link,
+.nav-links .nav-link,
+a.nav-link {
+    padding: 11px 18px !important;
+    background: rgba(255, 255, 255, 0.18) !important;
+    color: white !important;
+    text-decoration: none !important;
+    border-radius: 10px !important;
+    font-weight: 500 !important;
+    font-size: 0.9rem !important;
     backdrop-filter: blur(15px);
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
     white-space: nowrap;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
     letter-spacing: 0.3px;
+    display: inline-block !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }
 
-.nav-link:hover {
-    background: rgba(255, 255, 255, 0.28);
-    transform: translateY(-2px);
-    color: white;
-    text-decoration: none;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
-    border-color: rgba(255, 255, 255, 0.35);
+.unified-nav .nav-link:hover,
+.nav-links .nav-link:hover,
+a.nav-link:hover {
+    background: rgba(255, 255, 255, 0.28) !important;
+    transform: translateY(-2px) !important;
+    color: white !important;
+    text-decoration: none !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2) !important;
+    border-color: rgba(255, 255, 255, 0.35) !important;
 }
 
-.nav-link.active {
-    background: rgba(255, 255, 255, 0.35);
-    border-color: rgba(255, 255, 255, 0.45);
-    font-weight: 600;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-    transform: translateY(-1px);
+.unified-nav .nav-link.active,
+.nav-links .nav-link.active,
+a.nav-link.active {
+    background: rgba(255, 255, 255, 0.35) !important;
+    border-color: rgba(255, 255, 255, 0.45) !important;
+    font-weight: 600 !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25) !important;
+    transform: translateY(-1px) !important;
 }
 
-.nav-link:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+.unified-nav .nav-link:focus,
+.nav-links .nav-link:focus,
+a.nav-link:focus {
+    outline: none !important;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3) !important;
 }
 
 /* Header Actions in Navigation */
