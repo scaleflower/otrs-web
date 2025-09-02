@@ -100,7 +100,8 @@
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="{{ url_for('index') }}">首页</a>
                 <a class="nav-link" href="{{ url_for('database_page') }}">数据库统计</a>
-                <a class="nav-link active" href="{{ url_for('responsible_stats_page') }}">Responsible统计</a>
+                <a class="nav-link active" href="{{ url_for('responsible_stats') }}">负责人统计</a>
+                <a class="nav-link" href="{{ url_for('daily_statistics_page') }}">每日统计</a>
                 <a class="nav-link" href="{{ url_for('view_uploads') }}">上传记录</a>
             </div>
         </div>
@@ -349,8 +350,7 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        period: currentPeriod,
-                        selectedResponsibles: selected
+                        selected_responsibles: selected
                     })
                 });
                 
@@ -358,8 +358,9 @@
                 
                 if (data.success) {
                     currentStats = data.stats;
-                    currentTotals = data.totals;
-                    displayStats(data.stats, data.totals, data.period);
+                    // Extract totals from stats structure
+                    currentTotals = data.stats.total_by_responsible || {};
+                    displayStats(data.stats, currentTotals, 'day'); // Use default period
                     document.getElementById('exportButtons').style.display = 'block';
                     saveUserConfig(); // Save the current selection
                 } else {
@@ -379,77 +380,86 @@
             container.innerHTML = '';
             summaryContainer.style.display = 'none';
 
-            if (Object.keys(stats).length === 0) {
-                container.innerHTML = `
-                    <div class="alert alert-warning">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        没有找到相关数据
-                    </div>
-                `;
-                return;
-            }
+        if (!stats || Object.keys(stats).length === 0) {
+            container.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    没有找到相关数据
+                </div>
+            `;
+            return;
+        }
 
             // Display summary statistics
             displaySummaryTable(totals);
             summaryContainer.style.display = 'block';
 
-            // Display detailed statistics
-            Object.keys(stats).forEach(responsible => {
-                const card = document.createElement('div');
-                card.className = 'responsible-card';
-                
-                const periods = stats[responsible];
-                const total = totals[responsible] || 0;
-                
-                let tableRows = '';
-                Object.keys(periods).forEach(periodKey => {
-                    const count = periods[periodKey];
+        // Display detailed statistics for each responsible
+        Object.keys(totals).forEach(responsible => {
+            const card = document.createElement('div');
+            card.className = 'responsible-card';
+            
+            const total = totals[responsible] || 0;
+            const openCount = stats.open_by_responsible[responsible] || 0;
+            const ageDistribution = stats.age_distribution[responsible] || {};
+            
+            let tableRows = '';
+            if (ageDistribution) {
+                Object.keys(ageDistribution).forEach(ageKey => {
+                    const count = ageDistribution[ageKey];
+                    const ageLabel = getAgeLabel(ageKey);
                     tableRows += `
                         <tr>
-                            <td>${periodKey}</td>
+                            <td>${ageLabel}</td>
                             <td>
                                 <span class="clickable-count" 
-                                      onclick="showTicketDetails('${responsible}', '${period}', '${periodKey}')">
+                                      onclick="showTicketDetails('${responsible}', 'age', '${ageKey}')">
                                     ${count}
                                 </span>
                             </td>
                         </tr>
                     `;
                 });
+            }
 
-                card.innerHTML = `
-                    <div class="responsible-header">
-                        <h5 class="mb-0">
-                            <i class="bi bi-person-circle me-2"></i>
-                            ${responsible}
-                            <span class="badge bg-light text-dark ms-2">总计: ${total}</span>
-                        </h5>
+            card.innerHTML = `
+                <div class="responsible-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-person-circle me-2"></i>
+                        ${responsible}
+                        <span class="badge bg-light text-dark ms-2">总计: ${total}</span>
+                        <span class="badge bg-info text-dark ms-1">Open: ${openCount}</span>
+                    </h5>
+                </div>
+                <div class="responsible-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm stats-table">
+                            <thead>
+                                <tr>
+                                    <th>年龄分布</th>
+                                    <th>工单数量</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRows}
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="responsible-body">
-                        <div class="table-responsive">
-                            <table class="table table-sm stats-table">
-                                <thead>
-                                    <tr>
-                                        <th>${getPeriodLabel(period)}</th>
-                                        <th>工单数量</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${tableRows}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                `;
-                
-                container.appendChild(card);
-            });
+                </div>
+            `;
+            
+            container.appendChild(card);
+        });
         }
 
         // Display summary table
         function displaySummaryTable(totals) {
             const summaryBody = document.getElementById('summaryTableBody');
             summaryBody.innerHTML = '';
+
+            if (!totals || Object.keys(totals).length === 0) {
+                return;
+            }
 
             // Convert totals to array and sort by count descending
             const sortedTotals = Object.entries(totals)
@@ -478,6 +488,22 @@
                 case 'week': return '周次';
                 case 'month': return '月份';
                 default: return '周期';
+            }
+        }
+
+        // Get age label
+        function getAgeLabel(ageKey) {
+            switch(ageKey) {
+                case 'age_24h': return '≤24小时';
+                case 'age_24_48h': return '24-48小时';
+                case 'age_48_72h': return '48-72小时';
+                case 'age_72h': return '>72小时';
+                case 'age_lt_24h': return '<24小时';
+                case 'age_24_48h': return '24-48小时';
+                case 'age_48_72h': return '48-72小时';
+                case 'age_72_96h': return '72-96小时';
+                case 'age_gt_96h': return '>96小时';
+                default: return ageKey;
             }
         }
 

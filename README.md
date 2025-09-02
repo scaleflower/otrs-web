@@ -10,6 +10,105 @@
 - 📥 **导出功能**: 支持导出Excel和文本格式报告
 - 🎨 **美观界面**: 现代化的响应式设计
 - 📱 **移动友好**: 支持各种设备屏幕尺寸
+- 👥 **责任人分析**: 按责任人分组统计分析
+- 📅 **每日统计**: 自动计算每日工单统计数据
+- 🔄 **实时监控**: 数据库状态实时监控
+- 📋 **详细报告**: 多维度详细分析报告
+
+## 完整功能列表
+
+### 📄 主要页面
+
+1. **首页 (index.html)** - `/`
+   - 文件上传功能 (Excel文件)
+   - 数据分析选项 (清除现有数据或增量导入)
+   - 实时处理状态显示
+
+2. **上传记录页面 (uploads.html)** - `/uploads`
+   - 显示所有已上传的数据源
+   - 按文件名分组统计记录数量
+
+3. **上传详情页面 (upload_details.html)** - `/upload/<filename>`
+   - 显示特定上传文件的详细工单信息
+   - 列出所有相关工单记录
+
+4. **数据库统计页面 (database_stats.html)** - `/database`
+   - 显示数据库总体统计信息
+   - 实时数据库状态监控
+   - 空FirstResponse详情查看
+
+5. **责任人统计页面 (responsible_stats.html)** - `/responsible-stats`
+   - 按责任人分组统计
+   - 多选责任人分析功能
+   - 年龄分布统计
+
+6. **每日统计页面 (daily_statistics.html)** - `/daily-statistics`
+   - 每日工单统计报表
+   - 年龄分布趋势分析
+   - 执行日志查看
+
+7. **结果页面 (results.html)** - (通过分析后显示)
+   - 分析结果展示
+   - 图表和统计信息
+
+### 🔧 API 端点
+
+**文件处理相关:**
+- `POST /upload` - 文件上传和处理
+- `GET /processing-status` - 获取处理状态
+
+**数据导出相关:**
+- `POST /export/excel` - 导出Excel报表
+- `POST /export/txt` - 导出文本报表
+
+**统计分析相关:**
+- `POST /age-details` - 获取年龄分段详情
+- `POST /empty-firstresponse-details` - 获取空FirstResponse详情
+- `GET /database-stats` - 获取数据库统计信息
+
+**责任人分析相关:**
+- `GET /api/responsible-list` - 获取责任人列表
+- `POST /api/responsible-stats` - 获取责任人统计数据
+
+**每日统计相关:**
+- `GET /api/daily-statistics` - 获取每日统计数据
+- `POST /api/update-schedule` - 更新统计计划
+- `POST /api/calculate-daily-stats` - 手动计算每日统计
+- `GET /api/export-execution-logs` - 导出执行日志
+
+### ⚡ JavaScript 功能文件
+
+1. **script.js** - 主页面功能
+   - 文件上传处理
+   - 实时进度更新
+   - 数据分析交互
+
+2. **database_stats.js** - 数据库统计功能
+   - 数据库状态监控
+   - 实时数据刷新
+   - 详情查看功能
+
+3. **results.js** - 结果页面功能
+   - 图表渲染
+   - 数据展示
+   - 导出功能
+
+### 🗄️ 数据库功能
+
+**数据模型:**
+- OtrsTicket - 工单数据
+- UploadDetail - 上传记录
+- Statistic - 统计查询记录
+- DatabaseLog - 数据库操作日志
+- ResponsibleConfig - 责任人配置
+- DailyStatistics - 每日统计数据
+- StatisticsConfig - 统计配置
+- StatisticsLog - 统计执行日志
+
+**自动功能:**
+- 每日23:59自动计算年龄分布统计
+- 数据库操作日志记录
+- 用户选择记忆功能
 
 ## 安装要求
 

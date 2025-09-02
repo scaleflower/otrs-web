@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Re-upload Button Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Re-upload Button Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Check if reuploadBtn exists</h2>
+        <button onclick="testReuploadBtnExists()">Test Button Existence</button>
+        <div id="test1Result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Check if handleReupload function exists</h2>
+        <button onclick="testHandleReuploadExists()">Test Function Existence</button>
+        <div id="test2Result" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 3: Simulate re-upload button click</h2>
+        <button onclick="testReuploadClick()">Simulate Click</button>
+        <div id="test3Result" class="result"></div>
+    </div>
+
+    <script>
+        function testReuploadBtnExists() {
+            const reuploadBtn = document.getElementById('reuploadBtn');
+            if (reuploadBtn) {
+                document.getElementById('test1Result').innerHTML = 
+                    '<span style="color: green;">✓ reuploadBtn exists</span><br>' +
+                    'Button text: ' + reuploadBtn.textContent;
+            } else {
+                document.getElementById('test1Result').innerHTML = 
+                    '<span style="color: red;">✗ reuploadBtn not found</span>';
+            }
+        }
+        
+        function testHandleReuploadExists() {
+            if (typeof handleReupload === 'function') {
+                document.getElementById('test2Result').innerHTML = 
+                    '<span style="color: green;">✓ handleReupload function exists</span>';
+            } else {
+                document.getElementById('test2Result').innerHTML = 
+                    '<span style="color: red;">✗ handleReupload function not found</span>';
+            }
+        }
+        
+        function testReuploadClick() {
+            const reuploadBtn = document.getElementById('reuploadBtn');
+            if (reuploadBtn && typeof handleReupload === 'function') {
+                try {
+                    handleReupload();
+                    document.getElementById('test3Result').innerHTML = 
+                        '<span style="color: green;">✓ handleReupload function executed successfully</span>';
+                } catch (error) {
+                    document.getElementById('test3Result').innerHTML = 
+                        '<span style="color: red;">✗ Error executing handleReupload: ' + error.message + '</span>';
+                }
+            } else {
+                document.getElementById('test3Result').innerHTML = 
+                    '<span style="color: red;">✗ Cannot test - button or function not available</span>';
+            }
+        }
+    </script>
+</body>
+</html>
