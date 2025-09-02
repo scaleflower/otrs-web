@@ -14,10 +14,12 @@ class SchedulerService:
     def __init__(self):
         self.scheduler = None
         self.analysis_service = AnalysisService()
+        self.app = None
     
     def initialize_scheduler(self, app):
         """Initialize and start the scheduler"""
         if self.scheduler is None:
+            self.app = app  # Store Flask app reference
             self.scheduler = BackgroundScheduler()
             
             # Schedule age distribution calculation
@@ -69,12 +71,18 @@ class SchedulerService:
         """Job function for calculating age distribution"""
         try:
             print(f"🕐 Starting scheduled age distribution calculation at {datetime.now()}")
-            success, message = self.analysis_service.calculate_daily_age_distribution()
             
-            if success:
-                print(f"✓ Scheduled calculation completed: {message}")
+            # Run within Flask app context
+            if self.app:
+                with self.app.app_context():
+                    success, message = self.analysis_service.calculate_daily_age_distribution()
+                    
+                    if success:
+                        print(f"✓ Scheduled calculation completed: {message}")
+                    else:
+                        print(f"✗ Scheduled calculation failed: {message}")
             else:
-                print(f"✗ Scheduled calculation failed: {message}")
+                print("✗ No Flask app context available for scheduled job")
                 
         except Exception as e:
             print(f"✗ Error in scheduled age distribution calculation: {str(e)}")
@@ -82,13 +90,16 @@ class SchedulerService:
     def _get_schedule_time(self):
         """Get schedule time from database configuration"""
         try:
-            from flask import current_app
-            with current_app.app_context():
-                config = StatisticsConfig.query.first()
-                if config and config.enabled:
-                    return config.schedule_time
-                return '23:59'  # Default time
-        except:
+            if self.app:
+                with self.app.app_context():
+                    config = StatisticsConfig.query.first()
+                    if config and config.enabled:
+                        return config.schedule_time
+                    return '23:59'  # Default time
+            else:
+                return '23:59'  # Fallback default
+        except Exception as e:
+            print(f"Error getting schedule time: {str(e)}")
             return '23:59'  # Fallback default
     
     def update_schedule(self, schedule_time, enabled=True):
@@ -100,20 +111,22 @@ class SchedulerService:
                 raise ValueError("Invalid time format")
             
             # Update database configuration
-            from flask import current_app
             from models import db
             
-            with current_app.app_context():
-                config = StatisticsConfig.query.first()
-                if not config:
-                    config = StatisticsConfig()
-                    db.session.add(config)
-                
-                config.schedule_time = schedule_time
-                config.enabled = enabled
-                config.updated_at = datetime.utcnow()
-                
-                db.session.commit()
+            if self.app:
+                with self.app.app_context():
+                    config = StatisticsConfig.query.first()
+                    if not config:
+                        config = StatisticsConfig()
+                        db.session.add(config)
+                    
+                    config.schedule_time = schedule_time
+                    config.enabled = enabled
+                    config.updated_at = datetime.utcnow()
+                    
+                    db.session.commit()
+            else:
+                raise Exception("No Flask app context available")
             
             # Reschedule the job if scheduler is running
             if self.scheduler and self.scheduler.running and enabled:

@@ -233,8 +233,11 @@ def api_responsible_stats():
         if not is_valid:
             return jsonify({'error': validated_responsibles}), 400
         
-        # Get statistics using analysis service
-        stats = analysis_service.get_responsible_statistics(validated_responsibles)
+        # Get period parameter (default to 'total')
+        period = data.get('period', 'total')
+        
+        # Get statistics using analysis service with period filtering
+        stats = analysis_service.get_responsible_statistics(validated_responsibles, period)
         
         # Save user selection using models
         from models import ResponsibleConfig, db
@@ -298,6 +301,123 @@ def api_responsible_list():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/responsible-details', methods=['POST'])
+def api_responsible_details():
+    """Get detailed ticket information for a responsible person"""
+    try:
+        data = request.get_json()
+        is_valid, error = validate_json_data(data, ['responsible', 'period', 'timeValue'])
+        if not is_valid:
+            return jsonify({'error': error}), 400
+        
+        responsible = data['responsible']
+        period = data['period']
+        time_value = data['timeValue']
+        
+        from models import OtrsTicket
+        from datetime import datetime, timedelta
+        
+        # Build base query for the responsible person
+        base_query = OtrsTicket.query.filter(OtrsTicket.responsible == responsible)
+        
+        if period == 'age':
+            # Age-based filtering (for total statistics)
+            open_tickets = base_query.filter(OtrsTicket.closed_date.is_(None)).all()
+            
+            # Filter by age segment
+            tickets = []
+            for ticket in open_tickets:
+                if ticket.age_hours is not None:
+                    if time_value == 'age_24h' and ticket.age_hours <= 24:
+                        tickets.append(ticket)
+                    elif time_value == 'age_24_48h' and 24 < ticket.age_hours <= 48:
+                        tickets.append(ticket)
+                    elif time_value == 'age_48_72h' and 48 < ticket.age_hours <= 72:
+                        tickets.append(ticket)
+                    elif time_value == 'age_72h' and ticket.age_hours > 72:
+                        tickets.append(ticket)
+        else:
+            # Period-based filtering (for day/week/month statistics)
+            if period == 'day':
+                # Filter by specific date
+                try:
+                    target_date = datetime.strptime(time_value, '%Y-%m-%d').date()
+                    start_datetime = datetime.combine(target_date, datetime.min.time())
+                    end_datetime = start_datetime + timedelta(days=1)
+                    
+                    tickets = base_query.filter(
+                        OtrsTicket.created_date >= start_datetime,
+                        OtrsTicket.created_date < end_datetime
+                    ).all()
+                except ValueError:
+                    return jsonify({'error': 'Invalid date format'}), 400
+                    
+            elif period == 'week':
+                # Filter by specific week
+                try:
+                    # Parse week format like "2025-35" 
+                    year, week_num = time_value.replace('第', '').replace('周', '').split('-')
+                    year = int(year)
+                    week_num = int(week_num)
+                    
+                    # Calculate week start and end dates
+                    # This is a simplified approach - you might need more precise week calculation
+                    jan_1 = datetime(year, 1, 1)
+                    week_start = jan_1 + timedelta(weeks=week_num-1)
+                    week_start = week_start - timedelta(days=week_start.weekday())  # Monday
+                    week_end = week_start + timedelta(days=7)
+                    
+                    tickets = base_query.filter(
+                        OtrsTicket.created_date >= week_start,
+                        OtrsTicket.created_date < week_end
+                    ).all()
+                except (ValueError, IndexError):
+                    return jsonify({'error': 'Invalid week format'}), 400
+                    
+            elif period == 'month':
+                # Filter by specific month
+                try:
+                    # Parse month format like "2025-08"
+                    year, month = time_value.split('-')
+                    year = int(year)
+                    month = int(month)
+                    
+                    month_start = datetime(year, month, 1)
+                    if month == 12:
+                        month_end = datetime(year + 1, 1, 1)
+                    else:
+                        month_end = datetime(year, month + 1, 1)
+                    
+                    tickets = base_query.filter(
+                        OtrsTicket.created_date >= month_start,
+                        OtrsTicket.created_date < month_end
+                    ).all()
+                except (ValueError, IndexError):
+                    return jsonify({'error': 'Invalid month format'}), 400
+            else:
+                return jsonify({'error': 'Invalid period type'}), 400
+        
+        # Convert tickets to response format
+        details = []
+        for ticket in tickets:
+            details.append({
+                'ticket_number': ticket.ticket_number or 'N/A',
+                'created': str(ticket.created_date) if ticket.created_date else 'N/A',
+                'closed': str(ticket.closed_date) if ticket.closed_date else 'N/A',
+                'state': ticket.state or 'N/A',
+                'priority': ticket.priority or 'N/A',
+                'title': ticket.title or 'N/A'
+            })
+        
+        return jsonify({
+            'success': True,
+            'count': len(details),
+            'details': details
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/daily-statistics')
 def daily_statistics_page():
     """Daily statistics page"""
@@ -356,6 +476,68 @@ def api_calculate_daily_stats():
             })
         else:
             return jsonify({'error': message}), 500
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/export-responsible-excel', methods=['POST'])
+def api_export_responsible_excel():
+    """Export responsible statistics to Excel"""
+    try:
+        data = request.get_json()
+        is_valid, error = validate_json_data(data, ['period', 'selectedResponsibles', 'statsData', 'totalsData'])
+        if not is_valid:
+            return jsonify({'error': error}), 400
+        
+        # Extract export parameters
+        period = data['period']
+        selected_responsibles = data['selectedResponsibles']
+        stats_data = data['statsData']
+        totals_data = data['totalsData']
+        export_type = data.get('exportType', 'summary')  # Default to summary
+        
+        # Export using export service
+        output, filename = export_service.export_responsible_stats_to_excel(
+            period, selected_responsibles, stats_data, totals_data, export_type
+        )
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/export-responsible-txt', methods=['POST'])
+def api_export_responsible_txt():
+    """Export responsible statistics to text"""
+    try:
+        data = request.get_json()
+        is_valid, error = validate_json_data(data, ['period', 'selectedResponsibles', 'statsData', 'totalsData'])
+        if not is_valid:
+            return jsonify({'error': error}), 400
+        
+        # Extract export parameters
+        period = data['period']
+        selected_responsibles = data['selectedResponsibles']
+        stats_data = data['statsData']
+        totals_data = data['totalsData']
+        export_type = data.get('exportType', 'summary')  # Default to summary
+        
+        # Export using export service
+        output, filename = export_service.export_responsible_stats_to_text(
+            period, selected_responsibles, stats_data, totals_data, export_type
+        )
+        
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='text/plain'
+        )
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

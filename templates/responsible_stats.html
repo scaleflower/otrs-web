@@ -88,6 +88,64 @@
         .modal-body .table-hover tbody tr:hover {
             background-color: #e9ecef;
         }
+        
+        /* New styles for modern selector */
+        .selected-tag {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            background: #0d6efd;
+            color: white;
+            border-radius: 15px;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+        }
+        
+        .selected-tag:hover {
+            background: #0a58ca;
+            transform: translateY(-1px);
+        }
+        
+        .selected-tag .remove-tag {
+            margin-left: 6px;
+            cursor: pointer;
+            padding: 0 2px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.3);
+            font-size: 0.7rem;
+        }
+        
+        .selected-tag .remove-tag:hover {
+            background: rgba(255,255,255,0.5);
+        }
+        
+        .search-dropdown-item {
+            padding: 8px 16px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+            transition: all 0.2s ease;
+        }
+        
+        .search-dropdown-item:hover {
+            background: #f8f9fa;
+        }
+        
+        .search-dropdown-item:last-child {
+            border-bottom: none;
+        }
+        
+        .search-dropdown-item .match-highlight {
+            background: #fff3cd;
+            font-weight: bold;
+        }
+        
+        .position-relative .dropdown-menu.show {
+            display: block;
+        }
+        
+        #responsibleSearch:focus + .dropdown-menu {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -115,30 +173,53 @@
                     <span class="badge bg-secondary">v{{ APP_VERSION }}</span>
                 </div>
 
-                <!-- Period Selector -->
-                <div class="period-selector">
-                    <div class="row align-items-center">
-                        <div class="col-md-4">
-                            <label class="form-label fw-bold">统计周期:</label>
-                            <select class="form-select" id="periodSelect">
-                                <option value="day">按天统计</option>
-                                <option value="week">按周统计</option>
-                                <option value="month">按月统计</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">选择Responsible人员:</label>
-                            <div class="d-flex flex-wrap gap-2" id="responsibleCheckboxes">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="selectAll">
-                                    <label class="form-check-label" for="selectAll">全选</label>
+                <!-- Responsible Personnel Selection -->
+                <div class="card mb-4">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">
+                            <i class="bi bi-people me-2"></i>
+                            选择Responsible人员
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold">Responsible人员选择:</label>
+                                
+                                <!-- Search Input -->
+                                <div class="position-relative mb-3">
+                                    <input type="text" class="form-control" id="responsibleSearch" 
+                                           placeholder="输入姓名搜索，按Enter添加或从下拉列表选择...">
+                                    <div class="dropdown-menu w-100" id="searchDropdown" style="max-height: 200px; overflow-y: auto;"></div>
+                                </div>
+                                
+                                <!-- Selected Tags Display -->
+                                <div class="border rounded p-2 mb-3 bg-light" style="min-height: 50px;">
+                                    <div class="d-flex flex-wrap gap-2" id="selectedTags">
+                                        <span class="text-muted small" id="noSelectionText">未选择任何人员</span>
+                                    </div>
+                                </div>
+                                
+                                <!-- Quick Actions -->
+                                <div class="d-flex gap-2 mb-2">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearAllSelections()">
+                                        <i class="bi bi-x-circle me-1"></i>清空选择
+                                    </button>
+                                    <button type="button" class="btn btn-outline-info btn-sm" onclick="selectCommonUsers()">
+                                        <i class="bi bi-star me-1"></i>选择常用人员
+                                    </button>
                                 </div>
                             </div>
-                        </div>
-                        <div class="col-md-2">
-                            <button class="btn btn-primary w-100" onclick="loadStats()">
-                                <i class="bi bi-arrow-repeat me-1"></i>加载统计
-                            </button>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <div class="w-100">
+                                    <button class="btn btn-primary w-100 mb-2" onclick="loadStats()" id="loadStatsBtn" disabled>
+                                        <i class="bi bi-arrow-repeat me-1"></i>加载统计数据
+                                    </button>
+                                    <div class="text-muted small">
+                                        已选择 <span id="selectedCount">0</span> 位人员
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -147,16 +228,31 @@
                 <div id="summaryContainer" class="mt-4" style="display: none;">
                     <div class="card">
                         <div class="card-header bg-light">
-                            <h5 class="mb-0">
-                                <i class="bi bi-bar-chart me-2"></i>
-                                汇总统计表
-                            </h5>
+                            <div class="row align-items-center">
+                                <div class="col-md-6">
+                                    <h5 class="mb-0">
+                                        <i class="bi bi-bar-chart me-2"></i>
+                                        汇总统计表
+                                    </h5>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="d-flex align-items-center justify-content-end">
+                                        <label class="form-label me-2 mb-0 fw-bold">统计周期:</label>
+                                        <select class="form-select form-select-sm" id="periodSelect" style="width: auto;" onchange="changePeriod()">
+                                            <option value="total">总体统计</option>
+                                            <option value="day">按天统计</option>
+                                            <option value="week">按周统计</option>
+                                            <option value="month">按月统计</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive">
                                 <table class="table table-striped table-hover">
                                     <thead class="table-light">
-                                        <tr>
+                                        <tr id="summaryTableHeader">
                                             <th>排名</th>
                                             <th>Responsible人员</th>
                                             <th>处理工单总数</th>
@@ -170,21 +266,47 @@
                 </div>
 
                 <!-- Detailed Statistics -->
-                <div id="statsContainer" class="mt-4">
-                    <div class="alert alert-info" id="noDataAlert">
-                        <i class="bi bi-info-circle me-2"></i>
-                        请选择Responsible人员并点击"加载统计"按钮查看数据
+                <div id="detailsContainer" class="mt-4" style="display: none;">
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <h5 class="mb-0">
+                                <i class="bi bi-person-circle me-2"></i>
+                                个人明细统计
+                            </h5>
+                        </div>
+                        <div class="card-body p-0">
+                            <div id="statsContainer">
+                                <div class="alert alert-info m-3" id="noDataAlert">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    请选择Responsible人员并点击"加载统计"按钮查看数据
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Export Buttons -->
                 <div class="export-buttons text-end" id="exportButtons" style="display: none;">
-                    <button class="btn btn-success me-2" onclick="exportToExcel()">
-                        <i class="bi bi-file-earmark-excel me-1"></i>导出Excel
-                    </button>
-                    <button class="btn btn-outline-secondary" onclick="exportToTxt()">
-                        <i class="bi bi-file-earmark-text me-1"></i>导出文本
-                    </button>
+                    <div class="d-flex justify-content-end align-items-center gap-3">
+                        <!-- Export Type Selection -->
+                        <div class="d-flex align-items-center">
+                            <label class="form-label me-2 mb-0 fw-bold">导出类型:</label>
+                            <select class="form-select form-select-sm" id="exportTypeSelect" style="width: auto;">
+                                <option value="summary">汇总数据</option>
+                                <option value="details">明细数据</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Export Buttons -->
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success" onclick="exportToExcel()">
+                                <i class="bi bi-file-earmark-excel me-1"></i>导出Excel
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="exportToTxt()">
+                                <i class="bi bi-file-earmark-text me-1"></i>导出文本
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -236,22 +358,215 @@
     <script>
         let currentStats = {};
         let currentTotals = {};
-        let currentPeriod = 'day';
+        let currentPeriod = 'total';  // For summary table
+        let currentDetailsPeriod = 'total';  // For individual details (default)
+        let individualPeriods = {};  // Store individual period for each responsible
         let currentSelectedResponsibles = [];
+        let allResponsibles = [];
+        let commonUsers = [];
 
         // Initialize page
         document.addEventListener('DOMContentLoaded', function() {
             loadResponsibleList();
-            loadUserConfig();
-            
-            // Select all checkbox handler
-            document.getElementById('selectAll').addEventListener('change', function() {
-                const checkboxes = document.querySelectorAll('#responsibleCheckboxes input[type="checkbox"]:not(#selectAll)');
-                checkboxes.forEach(checkbox => {
-                    checkbox.checked = this.checked;
-                });
-            });
+            initializeSearchInput();
         });
+
+        // Initialize search input and events
+        function initializeSearchInput() {
+            const searchInput = document.getElementById('responsibleSearch');
+            const dropdown = document.getElementById('searchDropdown');
+            
+            // Search input event listeners
+            searchInput.addEventListener('input', handleSearchInput);
+            searchInput.addEventListener('keydown', handleSearchKeydown);
+            searchInput.addEventListener('focus', showSearchDropdown);
+            
+            // Hide dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!e.target.closest('.position-relative')) {
+                    hideSearchDropdown();
+                }
+            });
+        }
+
+        // Handle search input
+        function handleSearchInput(e) {
+            const query = e.target.value.toLowerCase().trim();
+            if (query.length > 0) {
+                const filtered = allResponsibles.filter(name => 
+                    name.toLowerCase().includes(query) && 
+                    !currentSelectedResponsibles.includes(name)
+                );
+                showFilteredResults(filtered, query);
+            } else {
+                showAllAvailable();
+            }
+        }
+
+        // Handle search keydown (Enter to add)
+        function handleSearchKeydown(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const query = e.target.value.trim();
+                if (query && !currentSelectedResponsibles.includes(query)) {
+                    // Check if it's a valid responsible name
+                    const exactMatch = allResponsibles.find(name => 
+                        name.toLowerCase() === query.toLowerCase()
+                    );
+                    if (exactMatch) {
+                        addSelectedResponsible(exactMatch);
+                        e.target.value = '';
+                        showAllAvailable();
+                    }
+                }
+            }
+        }
+
+        // Show search dropdown
+        function showSearchDropdown() {
+            const dropdown = document.getElementById('searchDropdown');
+            dropdown.classList.add('show');
+            showAllAvailable();
+        }
+
+        // Hide search dropdown
+        function hideSearchDropdown() {
+            const dropdown = document.getElementById('searchDropdown');
+            dropdown.classList.remove('show');
+        }
+
+        // Show filtered search results
+        function showFilteredResults(filtered, query) {
+            const dropdown = document.getElementById('searchDropdown');
+            dropdown.innerHTML = '';
+            
+            if (filtered.length === 0) {
+                dropdown.innerHTML = '<div class="search-dropdown-item text-muted">无匹配结果</div>';
+                return;
+            }
+            
+            filtered.forEach(name => {
+                const item = document.createElement('div');
+                item.className = 'search-dropdown-item';
+                
+                // Highlight matching text
+                const highlightedName = name.replace(
+                    new RegExp(`(${query})`, 'gi'),
+                    '<span class="match-highlight">$1</span>'
+                );
+                
+                item.innerHTML = highlightedName;
+                item.addEventListener('click', () => {
+                    addSelectedResponsible(name);
+                    document.getElementById('responsibleSearch').value = '';
+                    showAllAvailable();
+                });
+                
+                dropdown.appendChild(item);
+            });
+        }
+
+        // Show all available (unselected) responsibles
+        function showAllAvailable() {
+            const dropdown = document.getElementById('searchDropdown');
+            const available = allResponsibles.filter(name => 
+                !currentSelectedResponsibles.includes(name)
+            );
+            
+            dropdown.innerHTML = '';
+            
+            if (available.length === 0) {
+                dropdown.innerHTML = '<div class="search-dropdown-item text-muted">所有人员已选择</div>';
+                return;
+            }
+            
+            available.slice(0, 10).forEach(name => { // Show only first 10 to avoid long lists
+                const item = document.createElement('div');
+                item.className = 'search-dropdown-item';
+                item.textContent = name;
+                item.addEventListener('click', () => {
+                    addSelectedResponsible(name);
+                    document.getElementById('responsibleSearch').value = '';
+                    showAllAvailable();
+                });
+                dropdown.appendChild(item);
+            });
+            
+            if (available.length > 10) {
+                const moreItem = document.createElement('div');
+                moreItem.className = 'search-dropdown-item text-muted';
+                moreItem.textContent = `还有 ${available.length - 10} 个人员...`;
+                dropdown.appendChild(moreItem);
+            }
+        }
+
+        // Add selected responsible
+        function addSelectedResponsible(name) {
+            if (!currentSelectedResponsibles.includes(name)) {
+                currentSelectedResponsibles.push(name);
+                updateSelectedDisplay();
+                saveUserConfig(); // Auto-save
+            }
+        }
+
+        // Remove selected responsible
+        function removeSelectedResponsible(name) {
+            const index = currentSelectedResponsibles.indexOf(name);
+            if (index > -1) {
+                currentSelectedResponsibles.splice(index, 1);
+                updateSelectedDisplay();
+                saveUserConfig(); // Auto-save
+            }
+        }
+
+        // Update selected tags display
+        function updateSelectedDisplay() {
+            const container = document.getElementById('selectedTags');
+            const noSelectionText = document.getElementById('noSelectionText');
+            const countElement = document.getElementById('selectedCount');
+            const loadBtn = document.getElementById('loadStatsBtn');
+            
+            container.innerHTML = '';
+            
+            if (currentSelectedResponsibles.length === 0) {
+                container.appendChild(noSelectionText);
+                loadBtn.disabled = true;
+            } else {
+                currentSelectedResponsibles.forEach(name => {
+                    const tag = document.createElement('span');
+                    tag.className = 'selected-tag';
+                    tag.innerHTML = `
+                        ${name}
+                        <span class="remove-tag" onclick="removeSelectedResponsible('${name}')">×</span>
+                    `;
+                    container.appendChild(tag);
+                });
+                loadBtn.disabled = false;
+            }
+            
+            countElement.textContent = currentSelectedResponsibles.length;
+        }
+
+        // Clear all selections
+        function clearAllSelections() {
+            currentSelectedResponsibles = [];
+            updateSelectedDisplay();
+            showAllAvailable();
+            saveUserConfig();
+        }
+
+        // Select common users (top 5 by ticket count)
+        function selectCommonUsers() {
+            if (commonUsers.length > 0) {
+                commonUsers.slice(0, 5).forEach(name => {
+                    if (!currentSelectedResponsibles.includes(name)) {
+                        currentSelectedResponsibles.push(name);
+                    }
+                });
+                updateSelectedDisplay();
+                saveUserConfig();
+            }
+        }
 
         // Load responsible list from API
         async function loadResponsibleList() {
@@ -260,19 +575,9 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    const container = document.getElementById('responsibleCheckboxes');
-                    data.responsibles.forEach(responsible => {
-                        const div = document.createElement('div');
-                        div.className = 'form-check';
-                        div.innerHTML = `
-                            <input class="form-check-input responsible-checkbox" type="checkbox" 
-                                   value="${responsible}" id="responsible-${responsible}">
-                            <label class="form-check-label" for="responsible-${responsible}">
-                                ${responsible}
-                            </label>
-                        `;
-                        container.appendChild(div);
-                    });
+                    allResponsibles = data.responsibles;
+                    commonUsers = data.responsibles.slice(0, 10); // Assume first 10 are common
+                    await loadUserConfig(); // Load after we have the list
                 } else {
                     showError('加载Responsible列表失败: ' + data.error);
                 }
@@ -284,18 +589,12 @@
         // Load user configuration
         async function loadUserConfig() {
             try {
-                const response = await fetch('/api/responsible-config');
+                const response = await fetch('/api/responsible-list');
                 const data = await response.json();
                 
-                if (data.success) {
-                    currentSelectedResponsibles = data.selectedResponsibles;
-                    // Check the checkboxes based on saved config
-                    currentSelectedResponsibles.forEach(responsible => {
-                        const checkbox = document.querySelector(`#responsible-${responsible}`);
-                        if (checkbox) {
-                            checkbox.checked = true;
-                        }
-                    });
+                if (data.success && data.selected_responsibles) {
+                    currentSelectedResponsibles = data.selected_responsibles;
+                    updateSelectedDisplay();
                 }
             } catch (error) {
                 console.error('加载用户配置失败:', error);
@@ -304,21 +603,17 @@
 
         // Save user configuration
         async function saveUserConfig() {
-            const selected = getSelectedResponsibles();
             try {
-                const response = await fetch('/api/responsible-config', {
+                const response = await fetch('/api/responsible-stats', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        selectedResponsibles: selected
+                        selected_responsibles: currentSelectedResponsibles,
+                        save_only: true // Just save config, don't calculate stats
                     })
                 });
-                const data = await response.json();
-                if (!data.success) {
-                    console.error('保存配置失败:', data.error);
-                }
             } catch (error) {
                 console.error('保存配置失败:', error);
             }
@@ -326,19 +621,17 @@
 
         // Get selected responsibles
         function getSelectedResponsibles() {
-            const checkboxes = document.querySelectorAll('#responsibleCheckboxes input.responsible-checkbox:checked');
-            return Array.from(checkboxes).map(cb => cb.value);
+            return currentSelectedResponsibles;
         }
 
         // Load statistics
-        async function loadStats() {
+        async function loadStats(period = 'total') {
             const selected = getSelectedResponsibles();
             if (selected.length === 0) {
                 showError('请至少选择一个Responsible人员');
                 return;
             }
 
-            currentPeriod = document.getElementById('periodSelect').value;
             currentSelectedResponsibles = selected;
             
             showLoading(true);
@@ -350,7 +643,8 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        selected_responsibles: selected
+                        selected_responsibles: selected,
+                        period: period
                     })
                 });
                 
@@ -360,11 +654,198 @@
                     currentStats = data.stats;
                     // Extract totals from stats structure
                     currentTotals = data.stats.total_by_responsible || {};
-                    displayStats(data.stats, currentTotals, 'day'); // Use default period
+                    currentPeriod = period;
+                    
+                    // Show summary container and set period selector
+                    document.getElementById('summaryContainer').style.display = 'block';
+                    document.getElementById('periodSelect').value = period;
+                    
+                    // Show details container
+                    document.getElementById('detailsContainer').style.display = 'block';
+                    currentDetailsPeriod = period; // Initialize details period
+                    
+                    displayStats(data.stats, currentTotals, currentPeriod);
                     document.getElementById('exportButtons').style.display = 'block';
                     saveUserConfig(); // Save the current selection
                 } else {
                     showError('加载统计失败: ' + data.error);
+                }
+            } catch (error) {
+                showError('网络错误: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Change period handler for summary table
+        async function changePeriod() {
+            if (currentSelectedResponsibles.length === 0) {
+                showError('请先选择Responsible人员');
+                return;
+            }
+            
+            const newPeriod = document.getElementById('periodSelect').value;
+            if (newPeriod === currentPeriod) {
+                return; // No change needed
+            }
+            
+            await loadStats(newPeriod);
+        }
+
+        // Change period handler for individual responsible person
+        async function changeIndividualPeriod(responsible, newPeriod) {
+            if (currentSelectedResponsibles.length === 0) {
+                showError('请先选择Responsible人员');
+                return;
+            }
+            
+            const currentIndividualPeriod = individualPeriods[responsible];
+            if (newPeriod === currentIndividualPeriod) {
+                return; // No change needed
+            }
+            
+            // Update the individual period for this responsible
+            individualPeriods[responsible] = newPeriod;
+            
+            // Load stats for the new period and update only this responsible person's card
+            showLoading(true);
+            
+            try {
+                const response = await fetch('/api/responsible-stats', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        selected_responsibles: currentSelectedResponsibles,
+                        period: newPeriod
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update the individual card for this responsible person
+                    updateIndividualCard(responsible, data.stats, newPeriod);
+                } else {
+                    showError('加载个人统计失败: ' + data.error);
+                    // Revert the period change on error
+                    individualPeriods[responsible] = currentIndividualPeriod;
+                    document.getElementById(`individualPeriodSelect_${responsible.replace(/[^a-zA-Z0-9]/g, '_')}`).value = currentIndividualPeriod;
+                }
+            } catch (error) {
+                showError('网络错误: ' + error.message);
+                // Revert the period change on error
+                individualPeriods[responsible] = currentIndividualPeriod;
+                document.getElementById(`individualPeriodSelect_${responsible.replace(/[^a-zA-Z0-9]/g, '_')}`).value = currentIndividualPeriod;
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Update individual card for a specific responsible person
+        function updateIndividualCard(responsible, stats, period) {
+            const tableBodyId = `individualTableBody_${responsible.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const tableBody = document.getElementById(tableBodyId);
+            
+            if (!tableBody) {
+                console.error('Table body not found for responsible:', responsible);
+                return;
+            }
+            
+            const periodStats = stats.period_stats || {};
+            const periodLabel = period === 'total' ? '周期' : getPeriodLabel(period);
+            
+            let tableRows = '';
+            
+            // Get periods for this responsible person
+            const responsiblePeriods = {};
+            if (period === 'total') {
+                tableRows = `
+                    <tr>
+                        <td colspan="2" class="text-muted text-center">
+                            请选择具体周期（按天/周/月）查看详细分布
+                        </td>
+                    </tr>
+                `;
+            } else {
+                // Show period-specific data
+                Object.keys(periodStats).forEach(periodKey => {
+                    if (periodStats[periodKey][responsible]) {
+                        responsiblePeriods[periodKey] = periodStats[periodKey][responsible];
+                    }
+                });
+                
+                // Sort periods and display
+                const sortedPeriods = Object.keys(responsiblePeriods).sort().reverse();
+                sortedPeriods.forEach(periodKey => {
+                    const count = responsiblePeriods[periodKey];
+                    if (count > 0) {
+                        tableRows += `
+                            <tr>
+                                <td>${periodKey}</td>
+                                <td>
+                                    <span class="clickable-count" 
+                                          onclick="showTicketDetails('${responsible}', '${period}', '${periodKey}')">
+                                        ${count}
+                                    </span>
+                                </td>
+                            </tr>
+                        `;
+                    }
+                });
+                
+                if (tableRows === '') {
+                    tableRows = `
+                        <tr>
+                            <td colspan="2" class="text-muted text-center">该人员在所选周期内无工单记录</td>
+                        </tr>
+                    `;
+                }
+            }
+            
+            // Update the table content
+            tableBody.innerHTML = tableRows;
+            
+            // Update the table header label if needed
+            const card = tableBody.closest('.responsible-card');
+            if (card) {
+                const titleElement = card.querySelector('.responsible-body h6');
+                if (titleElement) {
+                    titleElement.innerHTML = `
+                        <i class="bi bi-list-ul me-2"></i>
+                        ${periodLabel}统计明细
+                    `;
+                }
+            }
+        }
+
+        // Load statistics specifically for details section
+        async function loadDetailsStats(period) {
+            showLoading(true);
+            
+            try {
+                const response = await fetch('/api/responsible-stats', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        selected_responsibles: currentSelectedResponsibles,
+                        period: period
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update only the details period and stats
+                    currentDetailsPeriod = period;
+                    
+                    // Display only the individual details with the new period
+                    displayIndividualDetails(data.stats, period);
+                } else {
+                    showError('加载明细统计失败: ' + data.error);
                 }
             } catch (error) {
                 showError('网络错误: ' + error.message);
@@ -380,105 +861,342 @@
             container.innerHTML = '';
             summaryContainer.style.display = 'none';
 
-        if (!stats || Object.keys(stats).length === 0) {
-            container.innerHTML = `
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    没有找到相关数据
-                </div>
-            `;
-            return;
-        }
+            if (!stats || Object.keys(stats).length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        没有找到相关数据
+                    </div>
+                `;
+                return;
+            }
 
             // Display summary statistics
-            displaySummaryTable(totals);
+            displaySummaryTable(totals, period);
             summaryContainer.style.display = 'block';
 
-        // Display detailed statistics for each responsible
-        Object.keys(totals).forEach(responsible => {
-            const card = document.createElement('div');
-            card.className = 'responsible-card';
-            
-            const total = totals[responsible] || 0;
-            const openCount = stats.open_by_responsible[responsible] || 0;
-            const ageDistribution = stats.age_distribution[responsible] || {};
-            
-            let tableRows = '';
-            if (ageDistribution) {
-                Object.keys(ageDistribution).forEach(ageKey => {
-                    const count = ageDistribution[ageKey];
-                    const ageLabel = getAgeLabel(ageKey);
-                    tableRows += `
+            // Display detailed statistics for each responsible with individual period selectors
+            Object.keys(totals).forEach(responsible => {
+                // Initialize individual period for this responsible if not set
+                if (!individualPeriods[responsible]) {
+                    individualPeriods[responsible] = period;
+                }
+                
+                const card = document.createElement('div');
+                card.className = 'responsible-card';
+                
+                const total = totals[responsible] || 0;
+                
+                let tableRows = '';
+                let tableHeader = '';
+                
+                // Use individual period for this responsible person
+                const individualPeriod = individualPeriods[responsible];
+                const periodStats = stats.period_stats || {};
+                const periodLabel = individualPeriod === 'total' ? '周期' : getPeriodLabel(individualPeriod);
+                
+                tableHeader = `
+                    <tr>
+                        <th>${periodLabel}</th>
+                        <th>工单数量</th>
+                    </tr>
+                `;
+                
+                // Get periods for this responsible person
+                const responsiblePeriods = {};
+                if (individualPeriod === 'total') {
+                    tableRows = `
                         <tr>
-                            <td>${ageLabel}</td>
-                            <td>
-                                <span class="clickable-count" 
-                                      onclick="showTicketDetails('${responsible}', 'age', '${ageKey}')">
-                                    ${count}
-                                </span>
+                            <td colspan="2" class="text-muted text-center">
+                                请选择具体周期（按天/周/月）查看详细分布
                             </td>
                         </tr>
                     `;
-                });
+                } else {
+                    // Show period-specific data
+                    Object.keys(periodStats).forEach(period => {
+                        if (periodStats[period][responsible]) {
+                            responsiblePeriods[period] = periodStats[period][responsible];
+                        }
+                    });
+                    
+                    // Sort periods and display
+                    const sortedPeriods = Object.keys(responsiblePeriods).sort().reverse();
+                    sortedPeriods.forEach(period => {
+                        const count = responsiblePeriods[period];
+                        if (count > 0) {
+                            tableRows += `
+                                <tr>
+                                    <td>${period}</td>
+                                    <td>
+                                        <span class="clickable-count" 
+                                              onclick="showTicketDetails('${responsible}', '${individualPeriod}', '${period}')">
+                                            ${count}
+                                        </span>
+                                    </td>
+                                </tr>
+                            `;
+                        }
+                    });
+                    
+                    if (tableRows === '') {
+                        tableRows = `
+                            <tr>
+                                <td colspan="2" class="text-muted text-center">该人员在所选周期内无工单记录</td>
+                            </tr>
+                        `;
+                    }
+                }
+
+                const detailTitle = `${periodLabel}统计明细`;
+
+                card.innerHTML = `
+                    <div class="responsible-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="bi bi-person-circle me-2"></i>
+                                ${responsible}
+                                <span class="badge bg-light text-dark ms-2">总计: ${total}</span>
+                            </h5>
+                            <div class="d-flex align-items-center">
+                                <label class="form-label me-2 mb-0 fw-bold small">周期:</label>
+                                <select class="form-select form-select-sm" 
+                                        id="individualPeriodSelect_${responsible.replace(/[^a-zA-Z0-9]/g, '_')}" 
+                                        style="width: auto;" 
+                                        onchange="changeIndividualPeriod('${responsible}', this.value)">
+                                    <option value="total" ${individualPeriod === 'total' ? 'selected' : ''}>总体统计</option>
+                                    <option value="day" ${individualPeriod === 'day' ? 'selected' : ''}>按天统计</option>
+                                    <option value="week" ${individualPeriod === 'week' ? 'selected' : ''}>按周统计</option>
+                                    <option value="month" ${individualPeriod === 'month' ? 'selected' : ''}>按月统计</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="responsible-body">
+                        <h6 class="mb-3">
+                            <i class="bi bi-list-ul me-2"></i>
+                            ${detailTitle}
+                        </h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm stats-table">
+                                <thead>
+                                    ${tableHeader}
+                                </thead>
+                                <tbody id="individualTableBody_${responsible.replace(/[^a-zA-Z0-9]/g, '_')}">
+                                    ${tableRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
+        }
+
+        // Display individual details with specific period
+        function displayIndividualDetails(stats, period) {
+            const container = document.getElementById('statsContainer');
+            const totals = stats.total_by_responsible || {};
+            
+            container.innerHTML = '';
+
+            if (!stats || Object.keys(totals).length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-warning m-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        没有找到相关数据
+                    </div>
+                `;
+                return;
             }
 
-            card.innerHTML = `
-                <div class="responsible-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-person-circle me-2"></i>
-                        ${responsible}
-                        <span class="badge bg-light text-dark ms-2">总计: ${total}</span>
-                        <span class="badge bg-info text-dark ms-1">Open: ${openCount}</span>
-                    </h5>
-                </div>
-                <div class="responsible-body">
-                    <div class="table-responsive">
-                        <table class="table table-sm stats-table">
-                            <thead>
+            // Display detailed statistics for each responsible using the details period
+            Object.keys(totals).forEach(responsible => {
+                const card = document.createElement('div');
+                card.className = 'responsible-card';
+                
+                const total = totals[responsible] || 0;
+                
+                let tableRows = '';
+                let tableHeader = '';
+                
+                // Use currentDetailsPeriod for individual details display
+                const periodStats = stats.period_stats || {};
+                const periodLabel = currentDetailsPeriod === 'total' ? '周期' : getPeriodLabel(currentDetailsPeriod);
+                
+                tableHeader = `
+                    <tr>
+                        <th>${periodLabel}</th>
+                        <th>工单数量</th>
+                    </tr>
+                `;
+                
+                // Get periods for this responsible person based on details period selection
+                const responsiblePeriods = {};
+                if (currentDetailsPeriod === 'total') {
+                    tableRows = `
+                        <tr>
+                            <td colspan="2" class="text-muted text-center">
+                                请选择具体周期（按天/周/月）查看详细分布
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    // Show period-specific data
+                    Object.keys(periodStats).forEach(period => {
+                        if (periodStats[period][responsible]) {
+                            responsiblePeriods[period] = periodStats[period][responsible];
+                        }
+                    });
+                    
+                    // Sort periods and display
+                    const sortedPeriods = Object.keys(responsiblePeriods).sort().reverse();
+                    sortedPeriods.forEach(period => {
+                        const count = responsiblePeriods[period];
+                        if (count > 0) {
+                            tableRows += `
                                 <tr>
-                                    <th>年龄分布</th>
-                                    <th>工单数量</th>
+                                    <td>${period}</td>
+                                    <td>
+                                        <span class="clickable-count" 
+                                              onclick="showTicketDetails('${responsible}', '${currentDetailsPeriod}', '${period}')">
+                                            ${count}
+                                        </span>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                ${tableRows}
-                            </tbody>
-                        </table>
+                            `;
+                        }
+                    });
+                    
+                    if (tableRows === '') {
+                        tableRows = `
+                            <tr>
+                                <td colspan="2" class="text-muted text-center">该人员在所选周期内无工单记录</td>
+                            </tr>
+                        `;
+                    }
+                }
+
+                const detailTitle = `${periodLabel}统计明细`;
+
+                card.innerHTML = `
+                    <div class="responsible-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-person-circle me-2"></i>
+                            ${responsible}
+                            <span class="badge bg-light text-dark ms-2">总计: ${total}</span>
+                        </h5>
                     </div>
-                </div>
-            `;
-            
-            container.appendChild(card);
-        });
+                    <div class="responsible-body">
+                        <h6 class="mb-3">
+                            <i class="bi bi-list-ul me-2"></i>
+                            ${detailTitle}
+                        </h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm stats-table">
+                                <thead>
+                                    ${tableHeader}
+                                </thead>
+                                <tbody>
+                                    ${tableRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(card);
+            });
         }
 
         // Display summary table
-        function displaySummaryTable(totals) {
+        function displaySummaryTable(totals, period) {
             const summaryBody = document.getElementById('summaryTableBody');
+            const summaryHeader = document.getElementById('summaryTableHeader');
             summaryBody.innerHTML = '';
 
             if (!totals || Object.keys(totals).length === 0) {
                 return;
             }
 
-            // Convert totals to array and sort by count descending
-            const sortedTotals = Object.entries(totals)
-                .sort((a, b) => b[1] - a[1])
-                .map(([responsible, count], index) => ({
-                    rank: index + 1,
-                    responsible,
-                    count
-                }));
-
-            sortedTotals.forEach(item => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${item.rank}</td>
-                    <td>${item.responsible}</td>
-                    <td><strong>${item.count}</strong></td>
+            // Update header based on period
+            if (currentPeriod === 'total') {
+                summaryHeader.innerHTML = `
+                    <th>排名</th>
+                    <th>Responsible人员</th>
+                    <th>处理工单总数</th>
                 `;
-                summaryBody.appendChild(row);
-            });
+                
+                // Convert totals to array and sort by count descending
+                const sortedTotals = Object.entries(totals)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([responsible, count], index) => ({
+                        rank: index + 1,
+                        responsible,
+                        count
+                    }));
+
+                sortedTotals.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.rank}</td>
+                        <td>${item.responsible}</td>
+                        <td><strong>${item.count}</strong></td>
+                    `;
+                    summaryBody.appendChild(row);
+                });
+            } else {
+                // For period statistics, show breakdown by period
+                // 行列交换：每个周期作为一行，每个Responsible人员作为列
+                const periodStats = currentStats.period_stats || {};
+                const periodLabel = getPeriodLabel(currentPeriod);
+                
+                // Get all periods (dates/weeks/months) and responsibles
+                const allPeriods = Object.keys(periodStats).sort().reverse(); // Show latest first
+                const allResponsibles = Object.keys(totals).sort(); // Sort alphabetically
+                
+                // Build dynamic header with responsibles as columns
+                let headerHtml = `<th>${periodLabel}</th>`;
+                allResponsibles.forEach(responsible => {
+                    headerHtml += `<th>${responsible}</th>`;
+                });
+                headerHtml += `<th>总计</th>`;
+                summaryHeader.innerHTML = headerHtml;
+                
+                // Build rows for each period
+                allPeriods.forEach(period => {
+                    const row = document.createElement('tr');
+                    let rowHtml = `<td><strong>${period}</strong></td>`;
+                    
+                    let periodTotal = 0;
+                    allResponsibles.forEach(responsible => {
+                        const count = periodStats[period] && periodStats[period][responsible] ? periodStats[period][responsible] : 0;
+                        periodTotal += count;
+                        rowHtml += `<td>${count}</td>`;
+                    });
+                    
+                    rowHtml += `<td><strong>${periodTotal}</strong></td>`;
+                    row.innerHTML = rowHtml;
+                    summaryBody.appendChild(row);
+                });
+                
+                // Add a total row at the bottom
+                const totalRow = document.createElement('tr');
+                totalRow.className = 'table-info'; // Bootstrap class for highlighting
+                let totalRowHtml = `<td><strong>总计</strong></td>`;
+                
+                let grandTotal = 0;
+                allResponsibles.forEach(responsible => {
+                    const responsibleTotal = totals[responsible] || 0;
+                    grandTotal += responsibleTotal;
+                    totalRowHtml += `<td><strong>${responsibleTotal}</strong></td>`;
+                });
+                
+                totalRowHtml += `<td><strong>${grandTotal}</strong></td>`;
+                totalRow.innerHTML = totalRowHtml;
+                summaryBody.appendChild(totalRow);
+            }
         }
 
         // Get period label
@@ -560,6 +1278,8 @@
 
         // Export to Excel
         async function exportToExcel() {
+            const exportType = document.getElementById('exportTypeSelect').value;
+            
             try {
                 const response = await fetch('/api/export-responsible-excel', {
                     method: 'POST',
@@ -570,7 +1290,8 @@
                         period: currentPeriod,
                         selectedResponsibles: currentSelectedResponsibles,
                         statsData: currentStats,
-                        totalsData: currentTotals
+                        totalsData: currentTotals,
+                        exportType: exportType
                     })
                 });
                 
@@ -594,6 +1315,8 @@
 
         // Export to Text
         async function exportToTxt() {
+            const exportType = document.getElementById('exportTypeSelect').value;
+            
             try {
                 const response = await fetch('/api/export-responsible-txt', {
                     method: 'POST',
@@ -604,7 +1327,8 @@
                         period: currentPeriod,
                         selectedResponsibles: currentSelectedResponsibles,
                         statsData: currentStats,
-                        totalsData: currentTotals
+                        totalsData: currentTotals,
+                        exportType: exportType
                     })
                 });
                 

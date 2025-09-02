@@ -311,6 +311,254 @@ class ExportService:
             empty_details = empty_firstresponse[['TicketNumber', 'Age', 'Created', 'Priority']].copy()
             empty_details.to_excel(writer, sheet_name='Empty FirstResponse Details', index=False)
     
+    def export_responsible_stats_to_excel(self, period, selected_responsibles, stats_data, totals_data, export_type='summary'):
+        """Export responsible statistics to Excel"""
+        try:
+            output = io.BytesIO()
+            
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                if export_type == 'summary':
+                    # Export summary table
+                    self._export_responsible_summary_excel(writer, period, selected_responsibles, stats_data, totals_data)
+                else:
+                    # Export details for each responsible person
+                    self._export_responsible_details_excel(writer, period, selected_responsibles, stats_data, totals_data)
+            
+            output.seek(0)
+            
+            # Log export operation
+            from .analysis_service import AnalysisService
+            analysis_service = AnalysisService()
+            analysis_service.log_statistic_query('export_responsible_excel', record_count=len(selected_responsibles))
+            
+            export_type_suffix = 'summary' if export_type == 'summary' else 'details'
+            filename = generate_filename(f'responsible_stats_{export_type_suffix}', 'xlsx')
+            return output, filename
+            
+        except Exception as e:
+            raise Exception(f'Error exporting responsible statistics Excel: {str(e)}')
+    
+    def export_responsible_stats_to_text(self, period, selected_responsibles, stats_data, totals_data, export_type='summary'):
+        """Export responsible statistics to text"""
+        try:
+            content = []
+            content.append("=" * 80)
+            content.append("RESPONSIBLE WORKLOAD STATISTICS REPORT")
+            content.append("=" * 80)
+            content.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            content.append(f"Period: {self._get_period_label(period)}")
+            content.append(f"Export Type: {'汇总数据' if export_type == 'summary' else '明细数据'}")
+            content.append(f"Selected Responsibles: {', '.join(selected_responsibles)}")
+            content.append("")
+            
+            if export_type == 'summary':
+                # Export summary table
+                self._export_responsible_summary_text(content, period, selected_responsibles, stats_data, totals_data)
+            else:
+                # Export details for each responsible person
+                self._export_responsible_details_text(content, period, selected_responsibles, stats_data, totals_data)
+            
+            # Convert to text
+            text_content = "\n".join(content)
+            
+            # Create text file in memory
+            output = io.BytesIO()
+            output.write(text_content.encode('utf-8'))
+            output.seek(0)
+            
+            # Log export operation
+            from .analysis_service import AnalysisService
+            analysis_service = AnalysisService()
+            analysis_service.log_statistic_query('export_responsible_txt', record_count=len(selected_responsibles))
+            
+            export_type_suffix = 'summary' if export_type == 'summary' else 'details'
+            filename = generate_filename(f'responsible_stats_{export_type_suffix}', 'txt')
+            return output, filename
+            
+        except Exception as e:
+            raise Exception(f'Error exporting responsible statistics text: {str(e)}')
+    
+    def _export_responsible_summary_excel(self, writer, period, selected_responsibles, stats_data, totals_data):
+        """Export summary table to Excel"""
+        if period == 'total':
+            # Total statistics - simple ranking table
+            summary_data = []
+            sorted_totals = sorted(totals_data.items(), key=lambda x: x[1], reverse=True)
+            
+            for idx, (responsible, total) in enumerate(sorted_totals):
+                summary_data.append({
+                    '排名': idx + 1,
+                    'Responsible人员': responsible,
+                    '处理工单总数': total
+                })
+            
+            pd.DataFrame(summary_data).to_excel(writer, sheet_name='汇总统计', index=False)
+        else:
+            # Period statistics - row/column swapped table
+            period_stats = stats_data.get('period_stats', {})
+            all_periods = sorted(period_stats.keys(), reverse=True)
+            all_responsibles = sorted(selected_responsibles)
+            
+            # Build the table data
+            table_data = []
+            period_label = self._get_period_label(period)
+            
+            # Header row data
+            header_row = {period_label: 'Period'}
+            for responsible in all_responsibles:
+                header_row[responsible] = responsible
+            header_row['总计'] = '总计'
+            
+            # Period rows
+            for period_key in all_periods:
+                row = {period_label: period_key}
+                period_total = 0
+                
+                for responsible in all_responsibles:
+                    count = period_stats.get(period_key, {}).get(responsible, 0)
+                    row[responsible] = count
+                    period_total += count
+                
+                row['总计'] = period_total
+                table_data.append(row)
+            
+            # Total row
+            total_row = {period_label: '总计'}
+            grand_total = 0
+            for responsible in all_responsibles:
+                responsible_total = totals_data.get(responsible, 0)
+                total_row[responsible] = responsible_total
+                grand_total += responsible_total
+            total_row['总计'] = grand_total
+            table_data.append(total_row)
+            
+            pd.DataFrame(table_data).to_excel(writer, sheet_name='汇总统计', index=False)
+    
+    def _export_responsible_details_excel(self, writer, period, selected_responsibles, stats_data, totals_data):
+        """Export details for each responsible person to Excel"""
+        period_stats = stats_data.get('period_stats', {})
+        
+        # Create a sheet for each responsible person
+        for responsible in selected_responsibles:
+            sheet_name = f"{responsible[:20]}明细"  # Limit name length
+            
+            details_data = []
+            period_label = self._get_period_label(period)
+            
+            if period == 'total':
+                # For total statistics, show a summary
+                details_data.append({
+                    period_label: '总体统计',
+                    '工单数量': totals_data.get(responsible, 0)
+                })
+            else:
+                # Show period breakdown
+                all_periods = sorted(period_stats.keys(), reverse=True)
+                for period_key in all_periods:
+                    count = period_stats.get(period_key, {}).get(responsible, 0)
+                    if count > 0:  # Only show periods with tickets
+                        details_data.append({
+                            period_label: period_key,
+                            '工单数量': count
+                        })
+                
+                # Add total row
+                details_data.append({
+                    period_label: '总计',
+                    '工单数量': totals_data.get(responsible, 0)
+                })
+            
+            if details_data:
+                pd.DataFrame(details_data).to_excel(writer, sheet_name=sheet_name, index=False)
+    
+    def _export_responsible_summary_text(self, content, period, selected_responsibles, stats_data, totals_data):
+        """Export summary table to text"""
+        if period == 'total':
+            content.append("SUMMARY STATISTICS")
+            content.append("-" * 50)
+            sorted_totals = sorted(totals_data.items(), key=lambda x: x[1], reverse=True)
+            
+            content.append(f"{'排名':<4} {'Responsible人员':<20} {'处理工单总数':<10}")
+            content.append("-" * 50)
+            
+            for idx, (responsible, total) in enumerate(sorted_totals):
+                content.append(f"{idx+1:<4} {responsible:<20} {total:<10}")
+        else:
+            period_stats = stats_data.get('period_stats', {})
+            all_periods = sorted(period_stats.keys(), reverse=True)
+            all_responsibles = sorted(selected_responsibles)
+            period_label = self._get_period_label(period)
+            
+            content.append("PERIOD BREAKDOWN STATISTICS")
+            content.append("-" * 80)
+            
+            # Header
+            header = f"{period_label:<15}"
+            for responsible in all_responsibles:
+                header += f"{responsible:<12}"
+            header += f"{'总计':<10}"
+            content.append(header)
+            content.append("-" * 80)
+            
+            # Period rows
+            for period_key in all_periods:
+                row = f"{period_key:<15}"
+                period_total = 0
+                
+                for responsible in all_responsibles:
+                    count = period_stats.get(period_key, {}).get(responsible, 0)
+                    row += f"{count:<12}"
+                    period_total += count
+                
+                row += f"{period_total:<10}"
+                content.append(row)
+            
+            # Total row
+            content.append("-" * 80)
+            total_row = f"{'总计':<15}"
+            grand_total = 0
+            for responsible in all_responsibles:
+                responsible_total = totals_data.get(responsible, 0)
+                total_row += f"{responsible_total:<12}"
+                grand_total += responsible_total
+            total_row += f"{grand_total:<10}"
+            content.append(total_row)
+    
+    def _export_responsible_details_text(self, content, period, selected_responsibles, stats_data, totals_data):
+        """Export details for each responsible person to text"""
+        period_stats = stats_data.get('period_stats', {})
+        period_label = self._get_period_label(period)
+        
+        for responsible in selected_responsibles:
+            content.append("")
+            content.append(f"DETAILS FOR: {responsible}")
+            content.append("=" * 60)
+            
+            if period == 'total':
+                content.append(f"总体统计: {totals_data.get(responsible, 0)} 工单")
+            else:
+                content.append(f"{'Period':<20} {'工单数量':<10}")
+                content.append("-" * 30)
+                
+                all_periods = sorted(period_stats.keys(), reverse=True)
+                for period_key in all_periods:
+                    count = period_stats.get(period_key, {}).get(responsible, 0)
+                    if count > 0:
+                        content.append(f"{period_key:<20} {count:<10}")
+                
+                content.append("-" * 30)
+                content.append(f"{'总计':<20} {totals_data.get(responsible, 0):<10}")
+    
+    def _get_period_label(self, period):
+        """Get period label for display"""
+        labels = {
+            'total': '周期',
+            'day': '日期',
+            'week': '周次',
+            'month': '月份'
+        }
+        return labels.get(period, '周期')
+    
     def _generate_histogram(self, daily_new, daily_closed, daily_open=None):
         """Generate histogram for daily ticket statistics"""
         try:

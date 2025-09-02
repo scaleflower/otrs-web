@@ -192,8 +192,13 @@ class AnalysisService:
             daily_stat.age_gt_96h = age_gt_96h
             daily_stat.updated_at = datetime.utcnow()
             
-            # Log the execution
+            # Log the execution with local time
+            from datetime import timezone
+            local_tz = timezone(timedelta(hours=8))  # Asia/Shanghai UTC+8
+            local_time = datetime.now(local_tz).replace(tzinfo=None)  # Remove timezone info for storage
+            
             log_entry = StatisticsLog(
+                execution_time=local_time,
                 statistic_date=today,
                 age_24h=age_lt_24h,
                 age_24_48h=age_24_48h,
@@ -232,22 +237,34 @@ class AnalysisService:
             db.session.rollback()
             return False, error_msg
     
-    def get_responsible_statistics(self, selected_responsibles):
-        """Get statistics for selected responsible persons"""
+    def get_responsible_statistics(self, selected_responsibles, period='total'):
+        """Get statistics for selected responsible persons with period filtering"""
         if not selected_responsibles:
             return {}
         
+        # Get date filters based on period
+        date_filters = self._get_period_filters(period)
+        
         stats = {}
         
-        # Total tickets by responsible
+        # Build base query with period filtering
+        base_query = OtrsTicket.query.filter(OtrsTicket.responsible.in_(selected_responsibles))
+        if date_filters:
+            base_query = base_query.filter(*date_filters)
+        
+        # Total tickets by responsible (within period)
         total_by_responsible = db.session.query(
             OtrsTicket.responsible,
             db.func.count(OtrsTicket.id).label('count')
-        ).filter(OtrsTicket.responsible.in_(selected_responsibles)).group_by(OtrsTicket.responsible).all()
+        ).filter(OtrsTicket.responsible.in_(selected_responsibles))
         
+        if date_filters:
+            total_by_responsible = total_by_responsible.filter(*date_filters)
+        
+        total_by_responsible = total_by_responsible.group_by(OtrsTicket.responsible).all()
         stats['total_by_responsible'] = {record.responsible: record.count for record in total_by_responsible}
         
-        # Open tickets by responsible
+        # Open tickets by responsible (always current open tickets, regardless of period)
         open_by_responsible = db.session.query(
             OtrsTicket.responsible,
             db.func.count(OtrsTicket.id).label('count')
@@ -258,7 +275,7 @@ class AnalysisService:
         
         stats['open_by_responsible'] = {record.responsible: record.count for record in open_by_responsible}
         
-        # Age distribution for open tickets by responsible
+        # Age distribution for open tickets by responsible (always current)
         age_distribution = {}
         for responsible in selected_responsibles:
             open_tickets = OtrsTicket.query.filter(
@@ -290,6 +307,88 @@ class AnalysisService:
             }
         
         stats['age_distribution'] = age_distribution
+        
+        # Add period-specific statistics for summary table
+        if period != 'total':
+            stats['period_stats'] = self._get_period_specific_stats(selected_responsibles, period)
+        
+        return stats
+    
+    def _get_period_filters(self, period):
+        """Get date filters based on period selection"""
+        # For period statistics, we don't filter by date - we want all data
+        # The filtering will be done in the period-specific grouping
+        return None
+    
+    def _get_period_specific_stats(self, selected_responsibles, period):
+        """Get period-specific statistics breakdown - shows all data grouped by period"""
+        from datetime import datetime, timedelta
+        
+        stats = {}
+        
+        if period == 'day':
+            # Group all data by day
+            daily_data = db.session.query(
+                db.func.date(OtrsTicket.created_date).label('date'),
+                OtrsTicket.responsible,
+                db.func.count(OtrsTicket.id).label('count')
+            ).filter(
+                OtrsTicket.responsible.in_(selected_responsibles),
+                OtrsTicket.created_date.isnot(None)
+            ).group_by(
+                db.func.date(OtrsTicket.created_date),
+                OtrsTicket.responsible
+            ).order_by(db.func.date(OtrsTicket.created_date).desc()).all()
+            
+            # Organize data by date
+            for record in daily_data:
+                date_str = str(record.date)
+                if date_str not in stats:
+                    stats[date_str] = {}
+                stats[date_str][record.responsible] = record.count
+                
+        elif period == 'week':
+            # Group all data by week
+            # Use PostgreSQL/MySQL compatible week calculation
+            weekly_data = db.session.query(
+                db.func.strftime('%Y-%W', OtrsTicket.created_date).label('week'),
+                OtrsTicket.responsible,
+                db.func.count(OtrsTicket.id).label('count')
+            ).filter(
+                OtrsTicket.responsible.in_(selected_responsibles),
+                OtrsTicket.created_date.isnot(None)
+            ).group_by(
+                db.func.strftime('%Y-%W', OtrsTicket.created_date),
+                OtrsTicket.responsible
+            ).order_by(db.func.strftime('%Y-%W', OtrsTicket.created_date).desc()).all()
+            
+            # Organize data by week
+            for record in weekly_data:
+                week_str = f"第{record.week}周"
+                if week_str not in stats:
+                    stats[week_str] = {}
+                stats[week_str][record.responsible] = record.count
+                
+        elif period == 'month':
+            # Group all data by month
+            monthly_data = db.session.query(
+                db.func.strftime('%Y-%m', OtrsTicket.created_date).label('month'),
+                OtrsTicket.responsible,
+                db.func.count(OtrsTicket.id).label('count')
+            ).filter(
+                OtrsTicket.responsible.in_(selected_responsibles),
+                OtrsTicket.created_date.isnot(None)
+            ).group_by(
+                db.func.strftime('%Y-%m', OtrsTicket.created_date),
+                OtrsTicket.responsible
+            ).order_by(db.func.strftime('%Y-%m', OtrsTicket.created_date).desc()).all()
+            
+            # Organize data by month
+            for record in monthly_data:
+                month_str = record.month
+                if month_str not in stats:
+                    stats[month_str] = {}
+                stats[month_str][record.responsible] = record.count
         
         return stats
     
