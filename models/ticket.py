@@ -85,7 +85,8 @@ class UploadDetail(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False, index=True)
     upload_time = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    record_count = db.Column(db.Integer, nullable=False)
+    record_count = db.Column(db.Integer, nullable=False)  # 当前数据库总记录数
+    new_records_count = db.Column(db.Integer, default=0)  # 本次新增记录数
     import_mode = db.Column(db.String(50))  # Import mode: clear_existing or incremental
     
     # Relationships
@@ -101,5 +102,6 @@ class UploadDetail(db.Model):
             'filename': self.filename,
             'upload_time': self.upload_time.isoformat() if self.upload_time else None,
             'record_count': self.record_count,
+            'new_records_count': self.new_records_count,
             'import_mode': self.import_mode
         }

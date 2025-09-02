@@ -68,9 +68,12 @@ class TicketService:
             update_processing_status(5, 'Importing data to database', 'Saving ticket records...')
             new_records_count = self._import_tickets(df, actual_columns, file.filename, clear_existing)
             
-            # Step 7: Create upload record
+            # Step 7: Get total database count after import
+            total_database_count = OtrsTicket.query.count()
+            
+            # Step 8: Create upload record
             update_processing_status(6, 'Creating upload record', 'Saving upload details...')
-            upload_record = self._create_upload_record(file.filename, new_records_count, clear_existing)
+            upload_record = self._create_upload_record(file.filename, new_records_count, total_database_count, clear_existing)
             
             update_processing_status(7, 'Processing completed!', f'Successfully imported {new_records_count} records')
             
@@ -78,6 +81,7 @@ class TicketService:
                 'success': True,
                 'total_records': total_records,
                 'new_records_count': new_records_count,
+                'total_database_count': total_database_count,
                 'upload_id': upload_record.id,
                 'filename': file.filename
             }
@@ -205,12 +209,13 @@ class TicketService:
         
         return new_records_count
     
-    def _create_upload_record(self, filename, record_count, clear_existing):
-        """Create upload detail record"""
+    def _create_upload_record(self, filename, new_records_count, total_database_count, clear_existing):
+        """Create upload detail record with both new and total counts"""
         import_mode = 'clear_existing' if clear_existing else 'incremental'
         upload_record = UploadDetail(
             filename=filename,
-            record_count=record_count,
+            record_count=total_database_count,      # Total records in database after import
+            new_records_count=new_records_count,    # Only newly imported records
             import_mode=import_mode
         )
         db.session.add(upload_record)

@@ -138,7 +138,18 @@ class AnalysisService:
             
             # Get yesterday's closing balance (today's opening balance)
             yesterday_stat = DailyStatistics.query.filter_by(statistic_date=yesterday).first()
-            opening_balance = yesterday_stat.closing_balance if yesterday_stat else 0
+            
+            if yesterday_stat:
+                # For subsequent records: use previous day's closing balance
+                opening_balance = yesterday_stat.closing_balance
+            else:
+                # For the first record: calculate from current otrs_ticket table
+                # Total records - (Closed + Resolved + Cancelled states)
+                total_tickets = OtrsTicket.query.count()
+                closed_tickets = OtrsTicket.query.filter(
+                    OtrsTicket.state.in_(['Closed', 'Resolved', 'Cancelled'])
+                ).count()
+                opening_balance = total_tickets - closed_tickets
             
             # Get today's new tickets (created today)
             new_tickets = OtrsTicket.query.filter(
