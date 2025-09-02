@@ -211,6 +211,9 @@
                                     <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearAllSelections()">
                                         <i class="bi bi-x-circle me-1"></i>清空选择
                                     </button>
+                                    <button type="button" class="btn btn-outline-success btn-sm" onclick="selectAllUsers()">
+                                        <i class="bi bi-check-all me-1"></i>全选
+                                    </button>
                                     <button type="button" class="btn btn-outline-info btn-sm" onclick="selectCommonUsers()">
                                         <i class="bi bi-star me-1"></i>选择常用人员
                                     </button>
@@ -493,7 +496,8 @@
                 return;
             }
             
-            available.slice(0, 10).forEach(name => { // Show only first 10 to avoid long lists
+            // Show all available people (removed the 10-item limit)
+            available.forEach(name => {
                 const item = document.createElement('div');
                 item.className = 'search-dropdown-item';
                 item.textContent = name;
@@ -505,11 +509,14 @@
                 dropdown.appendChild(item);
             });
             
-            if (available.length > 10) {
-                const moreItem = document.createElement('div');
-                moreItem.className = 'search-dropdown-item text-muted';
-                moreItem.textContent = `还有 ${available.length - 10} 个人员...`;
-                dropdown.appendChild(moreItem);
+            // Add a summary item at the bottom showing total count
+            if (available.length > 0) {
+                const summaryItem = document.createElement('div');
+                summaryItem.className = 'search-dropdown-item text-muted text-center';
+                summaryItem.style.borderTop = '1px solid #dee2e6';
+                summaryItem.style.fontStyle = 'italic';
+                summaryItem.textContent = `共 ${available.length} 位可选人员`;
+                dropdown.appendChild(summaryItem);
             }
         }
 
@@ -577,6 +584,21 @@
                     }
                 });
                 updateSelectedDisplay();
+                saveUserConfig();
+            }
+        }
+
+        // Select all users
+        function selectAllUsers() {
+            if (allResponsibles.length > 0) {
+                // Add all available personnel that are not currently selected
+                allResponsibles.forEach(name => {
+                    if (!currentSelectedResponsibles.includes(name)) {
+                        currentSelectedResponsibles.push(name);
+                    }
+                });
+                updateSelectedDisplay();
+                showAllAvailable(); // Refresh the dropdown to show updated available list
                 saveUserConfig();
             }
         }
