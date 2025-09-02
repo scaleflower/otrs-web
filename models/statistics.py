@@ -69,7 +69,7 @@ class DailyStatistics(db.Model):
         """Convert daily statistics to dictionary"""
         return {
             'id': self.id,
-            'statistic_date': str(self.statistic_date),
+            'date': str(self.statistic_date),
             'opening_balance': self.opening_balance,
             'new_tickets': self.new_tickets,
             'resolved_tickets': self.resolved_tickets,
