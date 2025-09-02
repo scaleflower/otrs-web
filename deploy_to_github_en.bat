@@ -4,19 +4,38 @@ setlocal enabledelayedexpansion
 :: ================================================================================
 :: OTRS Web Application - GitHub Deployment Script (Windows Version)
 :: Function: Automatically commit all changes and push to specified GitHub branch
-:: Usage: deploy_to_github_en.bat <branch_name> [commit_message]
+:: Usage: deploy_to_github_en.bat [branch_name] [commit_message]
 :: Example: deploy_to_github_en.bat master "New feature: incremental import and stats fix"
 :: ================================================================================
 
-:: Check parameters
+:: Check for help parameters first
+if "%1"=="-h" goto :show_help
+if "%1"=="--help" goto :show_help
+
+:: Set default branch name to master if no parameter provided
 if "%~1"=="" (
-    echo [ERROR] Usage: %0 ^<branch_name^> [commit_message]
-    echo [INFO] Example: %0 master "New feature implementation"
-    echo [INFO] Example: %0 develop "Bug fix"
-    exit /b 1
+    set "BRANCH_NAME=master"
+) else (
+    set "BRANCH_NAME=%~1"
 )
 
-set "BRANCH_NAME=%~1"
+goto :main
+
+:show_help
+echo Usage: %0 [branch_name] [commit_message]
+echo [INFO] Parameter description:
+echo [INFO]   branch_name    : Target branch name (optional, defaults to master)
+echo [INFO]   commit_message : Commit message (optional, defaults to timestamp)
+echo [INFO]
+echo [INFO] Examples:
+echo [INFO]   %0                           # Commit to master branch, use default commit message
+echo [INFO]   %0 master                    # Commit to master branch, use default commit message
+echo [INFO]   %0 develop                   # Commit to develop branch
+echo [INFO]   %0 master "New feature"      # Commit to master branch, custom commit message
+echo [INFO]   %0 develop "Bug fix"         # Commit to develop branch, custom commit message
+exit /b 0
+
+:main
 if "%~2"=="" (
     for /f "tokens=1-3 delims=/ " %%a in ('date /t') do set "current_date=%%c-%%a-%%b"
     for /f "tokens=1-2 delims=: " %%a in ('time /t') do set "current_time=%%a:%%b"

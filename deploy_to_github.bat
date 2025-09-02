@@ -9,15 +9,43 @@ setlocal enabledelayedexpansion
 :: 示例：deploy_to_github.bat master "新功能：增量导入和统计修复"
 :: ================================================================================
 
-:: 检查参数
-if "%~1"=="" (
-    echo [ERROR] 使用方法: %0 ^<branch_name^> [commit_message]
-    echo [INFO] 示例: %0 master "新功能实现"
-    echo [INFO] 示例: %0 develop "修复bug"
-    exit /b 1
+:: 检查参数 - branch_name参数现在是可选的，默认为master
+if "%~1"=="-h" (
+    echo 使用方法: %0 [branch_name] [commit_message]
+    echo [INFO] 参数说明：
+    echo [INFO]   branch_name    : 目标分支名（可选，默认为master）
+    echo [INFO]   commit_message : 提交信息（可选，默认为当前时间戳）
+    echo [INFO]
+    echo [INFO] 示例：
+    echo [INFO]   %0                           # 提交到master分支，使用默认提交信息
+    echo [INFO]   %0 master                    # 提交到master分支，使用默认提交信息
+    echo [INFO]   %0 develop                   # 提交到develop分支
+    echo [INFO]   %0 master "新功能实现"       # 提交到master分支，自定义提交信息
+    echo [INFO]   %0 develop "修复bug"        # 提交到develop分支，自定义提交信息
+    exit /b 0
 )
 
-set "BRANCH_NAME=%~1"
+if "%~1"=="--help" (
+    echo 使用方法: %0 [branch_name] [commit_message]
+    echo [INFO] 参数说明：
+    echo [INFO]   branch_name    : 目标分支名（可选，默认为master）
+    echo [INFO]   commit_message : 提交信息（可选，默认为当前时间戳）
+    echo [INFO]
+    echo [INFO] 示例：
+    echo [INFO]   %0                           # 提交到master分支，使用默认提交信息
+    echo [INFO]   %0 master                    # 提交到master分支，使用默认提交信息
+    echo [INFO]   %0 develop                   # 提交到develop分支
+    echo [INFO]   %0 master "新功能实现"       # 提交到master分支，自定义提交信息
+    echo [INFO]   %0 develop "修复bug"        # 提交到develop分支，自定义提交信息
+    exit /b 0
+)
+
+:: 设置默认分支名为master（如果没有提供参数）
+if "%~1"=="" (
+    set "BRANCH_NAME=master"
+) else (
+    set "BRANCH_NAME=%~1"
+)
 if "%~2"=="" (
     for /f "tokens=1-3 delims=/ " %%a in ('date /t') do set "current_date=%%c-%%a-%%b"
     for /f "tokens=1-2 delims=: " %%a in ('time /t') do set "current_time=%%a:%%b"

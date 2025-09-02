@@ -31,16 +31,25 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# 检查参数
-if [ $# -lt 1 ]; then
-    print_error "使用方法: $0 <branch_name> [commit_message]"
-    print_info "示例: $0 master \"新功能实现\""
-    print_info "示例: $0 develop \"修复bug\""
-    exit 1
-fi
-
-BRANCH_NAME=$1
+# 检查参数 - branch_name参数现在是可选的，默认为master
+BRANCH_NAME=${1:-"master"}
 COMMIT_MESSAGE=${2:-"Auto commit: $(date '+%Y-%m-%d %H:%M:%S')"}
+
+# 显示使用帮助（如果用户明确请求）
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    echo "使用方法: $0 [branch_name] [commit_message]"
+    print_info "参数说明："
+    print_info "  branch_name    : 目标分支名（可选，默认为master）"
+    print_info "  commit_message : 提交信息（可选，默认为当前时间戳）"
+    print_info ""
+    print_info "示例："
+    print_info "  $0                           # 提交到master分支，使用默认提交信息"
+    print_info "  $0 master                    # 提交到master分支，使用默认提交信息"
+    print_info "  $0 develop                   # 提交到develop分支"
+    print_info "  $0 master \"新功能实现\"       # 提交到master分支，自定义提交信息"
+    print_info "  $0 develop \"修复bug\"        # 提交到develop分支，自定义提交信息"
+    exit 0
+fi
 
 print_info "开始部署到GitHub..."
 print_info "目标分支: $BRANCH_NAME"
