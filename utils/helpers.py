@@ -15,12 +15,20 @@ processing_status = {
 }
 
 def update_processing_status(step, message, details=''):
-    """Update processing status"""
+    """Update processing status with optimized logging"""
     global processing_status
     processing_status['current_step'] = step
     processing_status['message'] = message
     processing_status['details'] = details
-    print(f"Step {step}/{processing_status['total_steps']}: {message} - {details}")
+    
+    # Only print key milestones to reduce console noise
+    # Print only step changes and important messages
+    if (step != processing_status.get('last_printed_step', 0) or 
+        'completed' in message.lower() or 
+        'error' in message.lower() or
+        'import' in message.lower()):
+        print(f"Step {step}/{processing_status['total_steps']}: {message}")
+        processing_status['last_printed_step'] = step
 
 def get_processing_status():
     """Get current processing status"""

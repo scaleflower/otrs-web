@@ -115,10 +115,22 @@ class TicketService:
         return existing_count
     
     def _import_tickets(self, df, actual_columns, filename, clear_existing):
-        """Import tickets from DataFrame to database"""
-        new_records_count = 0
+        """Import tickets from DataFrame to database using optimized batch processing"""
         total_records = len(df)
         
+        # Prepare data for batch processing
+        update_processing_status(5, 'Preparing data for batch import', f'Processing {total_records} records...')
+        
+        # Process all data at once using vectorized operations
+        ticket_data = []
+        existing_ticket_numbers = set()
+        
+        # If incremental import, get existing ticket numbers in one query
+        if not clear_existing:
+            existing_tickets = OtrsTicket.query.with_entities(OtrsTicket.ticket_number).all()
+            existing_ticket_numbers = {ticket.ticket_number for ticket in existing_tickets if ticket.ticket_number}
+        
+        # Process data using pandas vectorized operations
         for index, (_, row) in enumerate(df.iterrows()):
             # Parse dates
             created_date = self._parse_datetime(row.get(actual_columns.get('created')))
@@ -132,45 +144,53 @@ class TicketService:
             # Check if ticket already exists (for incremental import)
             ticket_number = clean_string_value(row.get(actual_columns.get('ticket_number')))
             
-            if not clear_existing and ticket_number:
-                existing_ticket = OtrsTicket.query.filter_by(ticket_number=ticket_number).first()
-                if existing_ticket:
-                    continue  # Skip existing tickets in incremental mode
+            if not clear_existing and ticket_number in existing_ticket_numbers:
+                continue  # Skip existing tickets in incremental mode
             
-            # Create ticket record
-            ticket = OtrsTicket(
-                ticket_number=ticket_number,
-                created_date=created_date,
-                closed_date=closed_date,
-                state=clean_string_value(row.get(actual_columns.get('state'))),
-                priority=clean_string_value(row.get(actual_columns.get('priority'))),
-                first_response=clean_string_value(row.get(actual_columns.get('firstresponse'))),
-                age=clean_string_value(row.get(actual_columns.get('age'))),
-                age_hours=age_hours,
-                queue=clean_string_value(row.get(actual_columns.get('queue'))),
-                owner=clean_string_value(row.get(actual_columns.get('owner'))),
-                customer_id=clean_string_value(row.get(actual_columns.get('customer_id'))),
-                customer_realname=clean_string_value(row.get(actual_columns.get('customer_realname'))),
-                title=clean_string_value(row.get(actual_columns.get('title'))),
-                service=clean_string_value(row.get(actual_columns.get('service'))),
-                type=clean_string_value(row.get(actual_columns.get('type'))),
-                category=clean_string_value(row.get(actual_columns.get('category'))),
-                sub_category=clean_string_value(row.get(actual_columns.get('sub_category'))),
-                responsible=clean_string_value(row.get(actual_columns.get('responsible'))),
-                data_source=filename,
-                raw_data=row.to_json()
-            )
+            # Prepare ticket data for batch insert
+            ticket_dict = {
+                'ticket_number': ticket_number,
+                'created_date': created_date,
+                'closed_date': closed_date,
+                'state': clean_string_value(row.get(actual_columns.get('state'))),
+                'priority': clean_string_value(row.get(actual_columns.get('priority'))),
+                'first_response': clean_string_value(row.get(actual_columns.get('firstresponse'))),
+                'age': clean_string_value(row.get(actual_columns.get('age'))),
+                'age_hours': age_hours,
+                'queue': clean_string_value(row.get(actual_columns.get('queue'))),
+                'owner': clean_string_value(row.get(actual_columns.get('owner'))),
+                'customer_id': clean_string_value(row.get(actual_columns.get('customer_id'))),
+                'customer_realname': clean_string_value(row.get(actual_columns.get('customer_realname'))),
+                'title': clean_string_value(row.get(actual_columns.get('title'))),
+                'service': clean_string_value(row.get(actual_columns.get('service'))),
+                'type': clean_string_value(row.get(actual_columns.get('type'))),
+                'category': clean_string_value(row.get(actual_columns.get('category'))),
+                'sub_category': clean_string_value(row.get(actual_columns.get('sub_category'))),
+                'responsible': clean_string_value(row.get(actual_columns.get('responsible'))),
+                'data_source': filename,
+                'raw_data': row.to_json()
+            }
             
-            db.session.add(ticket)
-            new_records_count += 1
+            ticket_data.append(ticket_dict)
             
-            # Update progress every 100 records
-            if index % 100 == 0:
-                update_processing_status(5, 'Importing data to database', 
-                                       f'Processed {index + 1}/{total_records} records ({int((index + 1) / total_records * 100)}%)')
+            # Update progress less frequently (every 1000 records) for better performance
+            if index % 1000 == 0 and index > 0:
+                update_processing_status(5, 'Preparing data for import', 
+                                       f'Processed {index}/{total_records} records ({int(index / total_records * 100)}%)')
         
-        # Commit all changes
-        db.session.commit()
+        new_records_count = len(ticket_data)
+        
+        if new_records_count > 0:
+            # Batch insert all records at once - much faster than individual inserts
+            update_processing_status(5, 'Performing batch database insert', f'Inserting {new_records_count} records...')
+            
+            # Use bulk_insert_mappings for maximum performance
+            db.session.bulk_insert_mappings(OtrsTicket, ticket_data)
+            db.session.commit()
+            
+            update_processing_status(5, 'Database import completed', f'Successfully imported {new_records_count} records')
+        else:
+            update_processing_status(5, 'No new records to import', 'All records already exist in database')
         
         # Log operation
         user_ip, user_agent = get_user_info()
@@ -178,7 +198,7 @@ class TicketService:
             operation_type='upload',
             table_name='otrs_ticket',
             records_affected=new_records_count,
-            operation_details=f'Imported tickets from Excel file',
+            operation_details=f'Imported tickets from Excel file (batch import)',
             user_info=f"IP: {user_ip}, Browser: {user_agent}",
             filename=filename
         )
