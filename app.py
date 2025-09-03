@@ -23,7 +23,7 @@ init_db(app)
 init_services(app)
 
 # Application version from config
-APP_VERSION = app.config.get('APP_VERSION', '1.2.2')
+APP_VERSION = app.config.get('APP_VERSION', '1.2.3')
 
 @app.route('/')
 def index():
@@ -35,7 +35,7 @@ def view_uploads():
     """View all uploaded data sources"""
     from models import UploadDetail
     upload_sessions = UploadDetail.query.order_by(UploadDetail.upload_time.desc()).all()
-    return render_template('uploads.html', upload_sessions=upload_sessions)
+    return render_template('uploads.html', upload_sessions=upload_sessions, APP_VERSION=APP_VERSION)
 
 @app.route('/upload/<filename>')
 def view_upload_details(filename):

@@ -10,7 +10,7 @@ class BaseConfig:
     
     # Application settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
-    APP_VERSION = "1.2.2"
+    APP_VERSION = "1.2.3"
     
     # Database settings
     SQLALCHEMY_TRACK_MODIFICATIONS = False

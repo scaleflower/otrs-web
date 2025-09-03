@@ -157,17 +157,21 @@
                                     <tr>
                                         <th>Execution Time</th>
                                         <th>Date</th>
-                                        <th>Total Open</th>
+                                        <th>Opening Balance</th>
+                                        <th>New Tickets</th>
+                                        <th>Resolved Tickets</th>
+                                        <th>Closing Balance</th>
                                         <th>Age <24h</th>
                                         <th>Age 24-48h</th>
                                         <th>Age 48-72h</th>
                                         <th>Age 72-96h</th>
+                                        <th>Age >96h</th>
                                         <th>Status</th>
                                     </tr>
                                 </thead>
                                 <tbody id="executionLogsTable">
                                     <tr>
-                                        <td colspan="8" class="text-center">Loading logs...</td>
+                                        <td colspan="12" class="text-center">Loading logs...</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -258,7 +262,7 @@
                 tableBody.innerHTML = '';
                 
                 if (logs.length === 0) {
-                    tableBody.innerHTML = '<tr><td colspan="8" class="text-center">No execution logs available</td></tr>';
+                    tableBody.innerHTML = '<tr><td colspan="12" class="text-center">No execution logs available</td></tr>';
                     return;
                 }
                 
@@ -267,11 +271,15 @@
                     row.innerHTML = `
                         <td>${formatDateTime(log.execution_time)}</td>
                         <td>${log.statistic_date || 'N/A'}</td>
-                        <td>${log.total_open}</td>
-                        <td>${log.age_24h}</td>
+                        <td>${log.opening_balance}</td>
+                        <td>${log.new_tickets}</td>
+                        <td>${log.resolved_tickets}</td>
+                        <td>${log.closing_balance}</td>
+                        <td>${log.age_lt_24h}</td>
                         <td>${log.age_24_48h}</td>
                         <td>${log.age_48_72h}</td>
                         <td>${log.age_72_96h}</td>
+                        <td>${log.age_gt_96h}</td>
                         <td>
                             <span class="badge ${log.status === 'success' ? 'bg-success' : 'bg-danger'}">
                                 ${log.status}

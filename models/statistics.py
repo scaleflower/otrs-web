@@ -120,11 +120,19 @@ class StatisticsLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     execution_time = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
     statistic_date = db.Column(db.Date, index=True)
-    age_24h = db.Column(db.Integer, default=0)
+    
+    # Consistent with DailyStatistics
+    opening_balance = db.Column(db.Integer, default=0)
+    new_tickets = db.Column(db.Integer, default=0)
+    resolved_tickets = db.Column(db.Integer, default=0)
+    closing_balance = db.Column(db.Integer, default=0)
+    
+    age_lt_24h = db.Column(db.Integer, default=0)
     age_24_48h = db.Column(db.Integer, default=0)
     age_48_72h = db.Column(db.Integer, default=0)
     age_72_96h = db.Column(db.Integer, default=0)
-    total_open = db.Column(db.Integer, default=0)
+    age_gt_96h = db.Column(db.Integer, default=0)
+    
     status = db.Column(db.String(20), default='success')  # success, error
     error_message = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -138,11 +146,15 @@ class StatisticsLog(db.Model):
             'id': self.id,
             'execution_time': self.execution_time.isoformat() if self.execution_time else None,
             'statistic_date': str(self.statistic_date) if self.statistic_date else None,
-            'age_24h': self.age_24h,
+            'opening_balance': self.opening_balance,
+            'new_tickets': self.new_tickets,
+            'resolved_tickets': self.resolved_tickets,
+            'closing_balance': self.closing_balance,
+            'age_lt_24h': self.age_lt_24h,
             'age_24_48h': self.age_24_48h,
             'age_48_72h': self.age_48_72h,
             'age_72_96h': self.age_72_96h,
-            'total_open': self.total_open,
+            'age_gt_96h': self.age_gt_96h,
             'status': self.status,
             'error_message': self.error_message,
             'created_at': self.created_at.isoformat() if self.created_at else None

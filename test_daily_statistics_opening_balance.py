@@ -77,14 +77,11 @@ def test_opening_balance_calculation():
         print("2. Creating test tickets...")
         test_tickets = create_test_tickets()
         
-        total_tickets = OtrsTicket.query.count()
-        closed_tickets = OtrsTicket.query.filter(
-            OtrsTicket.state.in_(['Closed', 'Resolved', 'Cancelled'])
-        ).count()
-        open_tickets = total_tickets - closed_tickets
+        # Calculate expected opening balance using closed_date IS NULL (new logic)
+        open_tickets = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).count()
         
-        print(f"   Total tickets created: {total_tickets}")
-        print(f"   Closed/Resolved/Cancelled tickets: {closed_tickets}")
+        print(f"   Total tickets created: {OtrsTicket.query.count()}")
+        print(f"   Open tickets (closed_date IS NULL): {open_tickets}")
         print(f"   Expected opening balance (for first record): {open_tickets}")
         
         # Test first calculation (no previous day data)
@@ -140,7 +137,7 @@ def test_opening_balance_calculation():
         
         # Summary of the logic
         print("\n=== Summary of Opening Balance Logic ===")
-        print("✓ First record: Opening Balance = Total tickets - (Closed + Resolved + Cancelled)")
+        print("✓ First record: Opening Balance = Tickets where closed_date IS NULL")
         print("✓ Subsequent records: Opening Balance = Previous day's Closing Balance")
         
         # Verify the logic with actual data

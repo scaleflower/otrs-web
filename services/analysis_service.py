@@ -144,12 +144,8 @@ class AnalysisService:
                 opening_balance = yesterday_stat.closing_balance
             else:
                 # For the first record: calculate from current otrs_ticket table
-                # Total records - (Closed + Resolved + Cancelled states)
-                total_tickets = OtrsTicket.query.count()
-                closed_tickets = OtrsTicket.query.filter(
-                    OtrsTicket.state.in_(['Closed', 'Resolved', 'Cancelled'])
-                ).count()
-                opening_balance = total_tickets - closed_tickets
+                # Use closed_date IS NULL for consistency with closing balance
+                opening_balance = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).count()
             
             # Get today's new tickets (created today)
             new_tickets = OtrsTicket.query.filter(
@@ -211,11 +207,15 @@ class AnalysisService:
             log_entry = StatisticsLog(
                 execution_time=local_time,
                 statistic_date=today,
-                age_24h=age_lt_24h,
+                opening_balance=opening_balance,
+                new_tickets=new_tickets,
+                resolved_tickets=resolved_tickets,
+                closing_balance=closing_balance,
+                age_lt_24h=age_lt_24h,
                 age_24_48h=age_24_48h,
                 age_48_72h=age_48_72h,
                 age_72_96h=age_72_96h,
-                total_open=closing_balance,
+                age_gt_96h=age_gt_96h,
                 status='success'
             )
             db.session.add(log_entry)
