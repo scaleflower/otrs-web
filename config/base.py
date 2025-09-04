@@ -41,7 +41,9 @@ class BaseConfig:
     
     # Database backup settings
     BACKUP_FOLDER = os.environ.get('BACKUP_FOLDER') or 'database_backups'
-    AUTO_BACKUP = True
+    AUTO_BACKUP = os.environ.get('AUTO_BACKUP_ENABLED', 'true').lower() == 'true'
+    BACKUP_TIME = os.environ.get('BACKUP_TIME') or '02:00'
+    BACKUP_RETENTION_DAYS = int(os.environ.get('BACKUP_RETENTION_DAYS', '30'))
     
     # API settings
     API_RATE_LIMIT = "100 per hour"
@@ -49,6 +51,12 @@ class BaseConfig:
     # Security settings
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
+    
+    # Daily Statistics Password Protection
+    DAILY_STATS_PASSWORD = os.environ.get('DAILY_STATS_PASSWORD') or 'Enabling@2025'
+    
+    # Session settings for password protection
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=2)  # 密码认证有效期2小时
     
     @staticmethod
     def init_app(app):

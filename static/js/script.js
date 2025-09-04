@@ -664,8 +664,8 @@ function loadLatestUploadInfo() {
                             <p>${info.filename}</p>
                         </div>
                         <div class="upload-info-item">
-                            <h4>更新记录数</h4>
-                            <p>${info.record_count.toLocaleString()} 条</p>
+                            <h4>新增记录数</h4>
+                            <p>${info.new_records_count.toLocaleString()} 条</p>
                         </div>
                         <div class="upload-info-item">
                             <h4>上传时间</h4>

@@ -3,12 +3,24 @@ OTRS Ticket Analysis Web Application - Refactored
 Flask-based ticket data analysis web application with modular architecture
 """
 
+# Load environment variables from .env file (if available)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("✅ 已加载 .env 文件")
+except ImportError:
+    print("⚠️  python-dotenv 未安装，使用系统环境变量")
+    print("💡 安装提示：pip install python-dotenv")
+except Exception as e:
+    print(f"⚠️  加载 .env 文件时出错：{e}")
+
 from flask import Flask, render_template, request, send_file, jsonify
 from datetime import datetime
 from config import Config
 from models import init_db
 from services import init_services, ticket_service, analysis_service, export_service, scheduler_service
 from utils import get_processing_status, validate_age_segment, validate_responsible_list, validate_json_data
+from utils.auth import require_daily_stats_password, PasswordProtection
 
 # Create Flask application
 app = Flask(__name__)
@@ -445,6 +457,7 @@ def api_daily_statistics():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/update-schedule', methods=['POST'])
+@require_daily_stats_password
 def api_update_schedule():
     """Update statistics schedule configuration"""
     try:
@@ -476,6 +489,7 @@ def api_update_schedule():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/calculate-daily-stats', methods=['POST'])
+@require_daily_stats_password
 def api_calculate_daily_stats():
     """Manually trigger daily statistics calculation"""
     try:
@@ -617,6 +631,7 @@ def api_latest_upload_info():
             'latest_upload': {
                 'filename': latest_upload_detail.filename,
                 'record_count': latest_upload_detail.record_count,
+                'new_records_count': latest_upload_detail.new_records_count,  # 本次新增记录数
                 'upload_time': upload_time,
                 'total_records': total_count,
                 'open_tickets': open_count
@@ -633,6 +648,202 @@ def api_latest_upload_info():
 def get_processing_status_route():
     """Get current processing status"""
     return jsonify(get_processing_status())
+
+# Authentication endpoints for daily statistics
+@app.route('/api/daily-stats-auth-status')
+def api_daily_stats_auth_status():
+    """Check authentication status for daily statistics modifications"""
+    return jsonify({
+        'authenticated': PasswordProtection.is_authenticated()
+    })
+
+@app.route('/api/daily-stats-authenticate', methods=['POST'])
+def api_daily_stats_authenticate():
+    """Authenticate user for daily statistics modifications"""
+    try:
+        data = request.get_json()
+        if not data or 'password' not in data:
+            return jsonify({'error': 'Password required'}), 400
+        
+        password = data['password']
+        
+        if PasswordProtection.verify_password(password):
+            PasswordProtection.authenticate_session()
+            return jsonify({
+                'success': True,
+                'message': 'Authentication successful'
+            })
+        else:
+            return jsonify({
+                'error': 'Invalid password'
+            }), 401
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/daily-stats-logout', methods=['POST'])
+def api_daily_stats_logout():
+    """Logout from daily statistics modifications"""
+    try:
+        PasswordProtection.deauthenticate_session()
+        return jsonify({
+            'success': True,
+            'message': 'Logged out successfully'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Database backup endpoints
+@app.route('/api/backup/create', methods=['POST'])
+@require_daily_stats_password
+def api_create_backup():
+    """Manually create a database backup"""
+    try:
+        success, message = scheduler_service.trigger_manual_backup()
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message
+            })
+        else:
+            return jsonify({'error': message}), 500
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/status')
+def api_backup_status():
+    """Get backup service status and statistics"""
+    try:
+        status = scheduler_service.get_backup_status()
+        return jsonify(status)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/list')
+def api_backup_list():
+    """Get list of all available backups"""
+    try:
+        if not scheduler_service.backup_service:
+            return jsonify({'error': 'Backup service not available'}), 500
+        
+        backups = scheduler_service.backup_service.list_backups()
+        
+        # Format backup data for API response
+        formatted_backups = []
+        for backup in backups:
+            formatted_backups.append({
+                'filename': backup['filename'],
+                'size_mb': backup['size_mb'],
+                'created_date': backup['created_date'].isoformat(),
+                'age_days': backup['age_days'],
+                'compressed': backup['compressed']
+            })
+        
+        return jsonify({
+            'success': True,
+            'backups': formatted_backups
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/verify', methods=['POST'])
+def api_verify_backup():
+    """Verify backup file integrity"""
+    try:
+        data = request.get_json()
+        if not data or 'filename' not in data:
+            return jsonify({'error': 'Backup filename required'}), 400
+        
+        filename = data['filename']
+        success, message = scheduler_service.verify_backup(filename)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message
+            })
+        else:
+            return jsonify({'error': message}), 500
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/cleanup', methods=['POST'])
+@require_daily_stats_password
+def api_cleanup_backups():
+    """Clean up old backup files"""
+    try:
+        data = request.get_json()
+        retention_days = data.get('retention_days') if data else None
+        
+        success, message, deleted_count = scheduler_service.cleanup_old_backups(retention_days)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'deleted_count': deleted_count
+            })
+        else:
+            return jsonify({'error': message}), 500
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/restore', methods=['POST'])
+@require_daily_stats_password
+def api_restore_backup():
+    """Restore database from backup"""
+    try:
+        data = request.get_json()
+        if not data or 'filename' not in data:
+            return jsonify({'error': 'Backup filename required'}), 400
+        
+        filename = data['filename']
+        
+        if not scheduler_service.backup_service:
+            return jsonify({'error': 'Backup service not available'}), 500
+        
+        success, message = scheduler_service.backup_service.restore_backup(filename)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'warning': 'Application restart recommended after database restore'
+            })
+        else:
+            return jsonify({'error': message}), 500
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup/download/<filename>')
+@require_daily_stats_password
+def api_download_backup(filename):
+    """Download a backup file"""
+    try:
+        if not scheduler_service.backup_service:
+            return jsonify({'error': 'Backup service not available'}), 500
+        
+        import os
+        backup_path = os.path.join(scheduler_service.backup_service.backup_folder, filename)
+        
+        if not os.path.exists(backup_path):
+            return jsonify({'error': 'Backup file not found'}), 404
+        
+        return send_file(
+            backup_path,
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Error handlers
 @app.errorhandler(404)

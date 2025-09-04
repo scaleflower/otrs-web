@@ -156,55 +156,30 @@ function populateDailyTable(stats) {
         const sortOrder = document.getElementById('sortOrder').value;
         console.log('Available dates:', allDates);
         
-        // Sort dates based on selected order
-        const sortedDates = [...allDates].sort((a, b) => {
+        // First, always calculate cumulative values from earliest to latest (chronological order)
+        const allDatesAsc = [...allDates].sort((a, b) => new Date(a) - new Date(b));
+        const cumulativeByDate = {};
+        let cumulativeOpen = 0;
+        
+        // Calculate cumulative open tickets chronologically
+        allDatesAsc.forEach(date => {
+            const newCount = stats.daily_new[date] || 0;
+            const closedCount = stats.daily_closed[date] || 0;
+            cumulativeOpen = cumulativeOpen + newCount - closedCount;
+            cumulativeByDate[date] = cumulativeOpen;
+        });
+        
+        // Now sort dates for display based on user preference
+        const displayDates = [...allDates].sort((a, b) => {
             const dateA = new Date(a);
             const dateB = new Date(b);
             return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
         });
         
-        console.log('Sorted dates:', sortedDates);
-        
-        // Calculate cumulative open tickets in the correct order
-        // For descending order, we need to calculate cumulative from latest to earliest
-        let cumulativeOpen = 0;
-        const cumulativeByDate = {};
-        
-        if (sortOrder === 'asc') {
-            // For ascending order: calculate from earliest to latest
-            sortedDates.forEach(date => {
-                const newCount = stats.daily_new[date] || 0;
-                const closedCount = stats.daily_closed[date] || 0;
-                cumulativeOpen = cumulativeOpen + newCount - closedCount;
-                cumulativeByDate[date] = cumulativeOpen;
-            });
-        } else {
-            // For descending order: calculate from latest to earliest
-            // First, we need to get all dates in ascending order to calculate total
-            const allDatesAsc = [...allDates].sort((a, b) => new Date(a) - new Date(b));
-            let totalCumulative = 0;
-            
-            // Calculate total cumulative from beginning to end
-            allDatesAsc.forEach(date => {
-                const newCount = stats.daily_new[date] || 0;
-                const closedCount = stats.daily_closed[date] || 0;
-                totalCumulative = totalCumulative + newCount - closedCount;
-            });
-            
-            // Now calculate cumulative for each date in descending order
-            cumulativeOpen = totalCumulative;
-            const reversedDates = [...allDatesAsc].reverse();
-            
-            reversedDates.forEach(date => {
-                const newCount = stats.daily_new[date] || 0;
-                const closedCount = stats.daily_closed[date] || 0;
-                cumulativeByDate[date] = cumulativeOpen;
-                cumulativeOpen = cumulativeOpen - newCount + closedCount;
-            });
-        }
+        console.log('Display dates order:', displayDates);
         
         // Display the table with correct cumulative values
-        sortedDates.forEach(date => {
+        displayDates.forEach(date => {
             const newCount = stats.daily_new[date] || 0;
             const closedCount = stats.daily_closed[date] || 0;
             const cumulativeOpen = cumulativeByDate[date] || 0;
@@ -218,6 +193,8 @@ function populateDailyTable(stats) {
             `;
             tbody.appendChild(row);
         });
+    } else {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">无每日统计数据</td></tr>';
     }
 }
 

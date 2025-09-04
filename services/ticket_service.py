@@ -3,8 +3,10 @@ Ticket service for handling ticket-related business logic
 """
 
 import pandas as pd
+import os
 from datetime import datetime
 from flask import request
+from werkzeug.utils import secure_filename
 from models import db, OtrsTicket, UploadDetail, DatabaseLog
 from utils import (
     validate_file, validate_excel_columns, parse_age_to_hours, 
@@ -44,8 +46,14 @@ class TicketService:
             if not is_valid:
                 raise ValueError(error_msg)
             
+            # Step 1.5: Save uploaded file to uploads directory
+            update_processing_status(1, 'Saving uploaded file', 'Saving Excel file to uploads directory...')
+            saved_filename = self._save_uploaded_file(file)
+            
             # Step 2: Read Excel file
             update_processing_status(2, 'Reading Excel file', 'Loading data into memory...')
+            # Reset file pointer to beginning after saving
+            file.seek(0)
             df = pd.read_excel(file)
             total_records = len(df)
             update_processing_status(2, 'Excel file read completed', f'Found {total_records} records in total')
@@ -221,6 +229,33 @@ class TicketService:
         db.session.add(upload_record)
         db.session.commit()
         return upload_record
+    
+    def _save_uploaded_file(self, file):
+        """Save uploaded file to uploads directory"""
+        try:
+            # Ensure uploads directory exists
+            uploads_dir = 'uploads'
+            os.makedirs(uploads_dir, exist_ok=True)
+            
+            # Generate safe filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            safe_filename = secure_filename(file.filename)
+            
+            # Create unique filename
+            name, ext = os.path.splitext(safe_filename)
+            saved_filename = f"{timestamp}_{name}{ext}"
+            
+            # Save file
+            file_path = os.path.join(uploads_dir, saved_filename)
+            file.save(file_path)
+            
+            print(f"✓ File saved to: {file_path}")
+            return saved_filename
+            
+        except Exception as e:
+            print(f"✗ Error saving file: {str(e)}")
+            # Don't fail the entire upload if file saving fails
+            return file.filename
     
     def _parse_datetime(self, date_value):
         """Parse datetime value safely"""

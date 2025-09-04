@@ -32,7 +32,7 @@ class OtrsTicket(db.Model):
     responsible = db.Column(db.String(255), index=True)  # Responsible person field
     
     # Metadata
-    import_time = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    import_time = db.Column(db.DateTime, default=datetime.now, index=True)
     data_source = db.Column(db.String(255), index=True)  # Original filename
     raw_data = db.Column(db.Text)  # Store complete raw JSON data
     
@@ -84,7 +84,7 @@ class UploadDetail(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(255), nullable=False, index=True)
-    upload_time = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    upload_time = db.Column(db.DateTime, default=datetime.now, index=True)
     record_count = db.Column(db.Integer, nullable=False)  # 当前数据库总记录数
     new_records_count = db.Column(db.Integer, default=0)  # 本次新增记录数
     import_mode = db.Column(db.String(50))  # Import mode: clear_existing or incremental

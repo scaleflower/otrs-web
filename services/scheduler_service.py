@@ -7,6 +7,7 @@ from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime
 from models import StatisticsConfig
 from .analysis_service import AnalysisService
+from .backup_service import BackupService
 
 class SchedulerService:
     """Service for scheduler operations"""
@@ -14,6 +15,7 @@ class SchedulerService:
     def __init__(self):
         self.scheduler = None
         self.analysis_service = AnalysisService()
+        self.backup_service = None
         self.app = None
     
     def initialize_scheduler(self, app):
@@ -22,8 +24,14 @@ class SchedulerService:
             self.app = app  # Store Flask app reference
             self.scheduler = BackgroundScheduler()
             
+            # Initialize backup service
+            self.backup_service = BackupService(app)
+            
             # Schedule age distribution calculation
             self._schedule_age_distribution()
+            
+            # Schedule daily database backup
+            self._schedule_daily_backup()
             
             # Start scheduler
             self.scheduler.start()
@@ -198,3 +206,141 @@ class SchedulerService:
                 return False, "Scheduler is not running"
         except Exception as e:
             return False, f"Error rescheduling job: {str(e)}"
+    
+    def _schedule_daily_backup(self):
+        """Schedule daily database backup"""
+        try:
+            # Check if auto backup is enabled
+            auto_backup = self.app.config.get('AUTO_BACKUP', True) if self.app else True
+            
+            if not auto_backup:
+                print("✓ Auto backup is disabled")
+                return
+            
+            # Get backup time from configuration
+            backup_time = self.app.config.get('BACKUP_TIME', '02:00') if self.app else '02:00'
+            
+            # Parse backup time
+            hour, minute = map(int, backup_time.split(':'))
+            
+            # Remove existing backup job if any
+            try:
+                self.scheduler.remove_job('daily_backup_job')
+            except:
+                pass
+            
+            # Schedule backup at configured time
+            self.scheduler.add_job(
+                func=self._daily_backup_job,
+                trigger=CronTrigger(hour=hour, minute=minute),
+                id='daily_backup_job',
+                name=f'Daily database backup at {backup_time}',
+                replace_existing=True
+            )
+            print(f"✓ Daily backup job scheduled for {backup_time}")
+            
+        except Exception as e:
+            print(f"✗ Error scheduling daily backup: {str(e)}")
+    
+    def _daily_backup_job(self):
+        """Job function for daily database backup"""
+        try:
+            print(f"🔄 Starting scheduled daily backup at {datetime.now()}")
+            
+            # Run within Flask app context
+            if self.app and self.backup_service:
+                with self.app.app_context():
+                    # Create backup
+                    success, message, backup_path = self.backup_service.create_backup(
+                        compress=True, 
+                        include_timestamp=True
+                    )
+                    
+                    if success:
+                        print(f"✓ Daily backup completed: {message}")
+                        
+                        # Clean up old backups
+                        cleanup_success, cleanup_message, deleted_count = self.backup_service.cleanup_old_backups()
+                        if cleanup_success and deleted_count > 0:
+                            print(f"✓ Cleanup completed: {cleanup_message}")
+                        
+                    else:
+                        print(f"✗ Daily backup failed: {message}")
+            else:
+                print("✗ No Flask app context or backup service available for scheduled backup")
+                
+        except Exception as e:
+            print(f"✗ Error in scheduled daily backup: {str(e)}")
+    
+    def trigger_manual_backup(self):
+        """Manually trigger database backup"""
+        try:
+            print("🔧 Manual database backup triggered")
+            if self.backup_service:
+                success, message, backup_path = self.backup_service.create_backup(compress=True, include_timestamp=True)
+                # Return only success and message for consistency with other trigger methods
+                return success, message
+            else:
+                return False, "Backup service not initialized"
+        except Exception as e:
+            error_msg = f"Error in manual backup: {str(e)}"
+            print(f"✗ {error_msg}")
+            return False, error_msg
+    
+    def get_backup_status(self):
+        """Get backup service status and statistics"""
+        try:
+            if not self.backup_service:
+                return {
+                    'service_available': False,
+                    'error': 'Backup service not initialized'
+                }
+            
+            # Get backup statistics
+            stats = self.backup_service.get_backup_stats()
+            
+            # Get backup list
+            backups = self.backup_service.list_backups()
+            
+            # Check if auto backup is enabled
+            auto_backup = self.app.config.get('AUTO_BACKUP', True) if self.app else True
+            
+            return {
+                'service_available': True,
+                'auto_backup_enabled': auto_backup,
+                'statistics': stats,
+                'recent_backups': backups[:5],  # Last 5 backups
+                'total_backups': len(backups)
+            }
+            
+        except Exception as e:
+            return {
+                'service_available': False,
+                'error': str(e)
+            }
+    
+    def cleanup_old_backups(self, retention_days=None):
+        """Manually trigger backup cleanup"""
+        try:
+            if not self.backup_service:
+                return False, "Backup service not initialized"
+            
+            return self.backup_service.cleanup_old_backups(retention_days)
+            
+        except Exception as e:
+            error_msg = f"Error cleaning up backups: {str(e)}"
+            print(f"✗ {error_msg}")
+            return False, error_msg
+    
+    def verify_backup(self, backup_filename):
+        """Verify a backup file"""
+        try:
+            if not self.backup_service:
+                return False, "Backup service not initialized"
+            
+            return self.backup_service.verify_backup(backup_filename)
+            
+        except Exception as e:
+            error_msg = f"Error verifying backup: {str(e)}"
+            print(f"✗ {error_msg}")
+            return False, error_msg

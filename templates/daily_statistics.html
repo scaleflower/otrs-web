@@ -188,22 +188,65 @@
         </div>
     </footer>
 
+    <!-- Password Authentication Modal -->
+    <div class="modal fade" id="passwordModal" tabindex="-1" aria-labelledby="passwordModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="passwordModalLabel">
+                        <i class="bi bi-shield-lock"></i> 管理员密码验证
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">此操作需要管理员权限，请输入密码以继续。</p>
+                    <div class="mb-3">
+                        <label for="authPassword" class="form-label">密码</label>
+                        <input type="password" class="form-control" id="authPassword" placeholder="请输入密码">
+                        <div id="passwordError" class="text-danger mt-2" style="display: none;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="authenticateBtn">
+                        <i class="bi bi-unlock"></i> 验证
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Authentication Status Indicator -->
+    <div id="authStatusIndicator" class="position-fixed" style="top: 100px; right: 15px; z-index: 1050;">
+        <div class="badge bg-secondary" id="authStatus">
+            <i class="bi bi-lock"></i> 未认证
+        </div>
+        <button id="logoutBtn" class="btn btn-sm btn-outline-danger ms-2" style="display: none;">
+            <i class="bi bi-box-arrow-right"></i> 退出
+        </button>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             let dailyTrendChart = null;
             let ageDistributionChart = null;
+            let isAuthenticated = false;
+            let pendingAction = null;
             
-            // Load initial data
+            // Load initial data and check authentication status
             loadDailyStatistics();
+            checkAuthenticationStatus();
             
             // Setup form submission
             document.getElementById('scheduleForm').addEventListener('submit', function(e) {
                 e.preventDefault();
-                updateSchedule();
+                requireAuthentication(updateSchedule);
             });
             
             // Setup button click handlers
-            document.getElementById('calculateNowBtn').addEventListener('click', calculateNow);
+            document.getElementById('calculateNowBtn').addEventListener('click', function() {
+                requireAuthentication(calculateNow);
+            });
             document.getElementById('refreshDataBtn').addEventListener('click', loadDailyStatistics);
             document.getElementById('exportLogsBtn').addEventListener('click', exportExecutionLogs);
             
@@ -471,6 +514,119 @@
                 });
             }
             
+            // Authentication functions
+            async function checkAuthenticationStatus() {
+                try {
+                    const response = await fetch('/api/daily-stats-auth-status');
+                    const data = await response.json();
+                    updateAuthStatus(data.authenticated);
+                } catch (error) {
+                    console.error('Error checking auth status:', error);
+                    updateAuthStatus(false);
+                }
+            }
+            
+            function updateAuthStatus(authenticated) {
+                isAuthenticated = authenticated;
+                const authStatus = document.getElementById('authStatus');
+                const logoutBtn = document.getElementById('logoutBtn');
+                
+                if (authenticated) {
+                    authStatus.innerHTML = '<i class="bi bi-unlock"></i> 已认证';
+                    authStatus.className = 'badge bg-success';
+                    logoutBtn.style.display = 'inline-block';
+                } else {
+                    authStatus.innerHTML = '<i class="bi bi-lock"></i> 未认证';
+                    authStatus.className = 'badge bg-secondary';
+                    logoutBtn.style.display = 'none';
+                }
+            }
+            
+            function requireAuthentication(action) {
+                if (isAuthenticated) {
+                    action();
+                } else {
+                    pendingAction = action;
+                    showPasswordModal();
+                }
+            }
+            
+            function showPasswordModal() {
+                const modal = new bootstrap.Modal(document.getElementById('passwordModal'));
+                document.getElementById('authPassword').value = '';
+                document.getElementById('passwordError').style.display = 'none';
+                modal.show();
+            }
+            
+            async function authenticate() {
+                const password = document.getElementById('authPassword').value;
+                const errorDiv = document.getElementById('passwordError');
+                
+                if (!password) {
+                    errorDiv.textContent = '请输入密码';
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/api/daily-stats-authenticate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ password: password })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Close modal
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('passwordModal'));
+                        modal.hide();
+                        
+                        // Update authentication status
+                        updateAuthStatus(true);
+                        
+                        // Execute pending action
+                        if (pendingAction) {
+                            pendingAction();
+                            pendingAction = null;
+                        }
+                        
+                        showSuccess('认证成功');
+                    } else {
+                        errorDiv.textContent = data.error || '认证失败';
+                        errorDiv.style.display = 'block';
+                    }
+                } catch (error) {
+                    errorDiv.textContent = '认证过程中发生错误: ' + error.message;
+                    errorDiv.style.display = 'block';
+                }
+            }
+            
+            async function logout() {
+                try {
+                    const response = await fetch('/api/daily-stats-logout', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        }
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        updateAuthStatus(false);
+                        showSuccess('已退出认证');
+                    } else {
+                        showError('退出时发生错误: ' + (data.error || 'Unknown error'));
+                    }
+                } catch (error) {
+                    showError('退出时发生错误: ' + error.message);
+                }
+            }
+            
+            // Protected operations
             async function updateSchedule() {
                 const scheduleTime = document.getElementById('scheduleTime').value;
                 const enabled = document.getElementById('scheduleEnabled').checked;
@@ -488,6 +644,13 @@
                     });
                     
                     const data = await response.json();
+                    
+                    if (response.status === 401 && data.auth_required) {
+                        // Authentication required
+                        pendingAction = () => updateSchedule();
+                        showPasswordModal();
+                        return;
+                    }
                     
                     if (data.success) {
                         showSuccess('Schedule updated successfully');
@@ -510,6 +673,13 @@
                     
                     const data = await response.json();
                     
+                    if (response.status === 401 && data.auth_required) {
+                        // Authentication required
+                        pendingAction = () => calculateNow();
+                        showPasswordModal();
+                        return;
+                    }
+                    
                     if (data.success) {
                         showSuccess('Daily statistics calculation started');
                         // Reload data after a short delay
@@ -521,6 +691,17 @@
                     showError('Error calculating statistics: ' + error.message);
                 }
             }
+            
+            // Setup authentication event handlers
+            document.getElementById('authenticateBtn').addEventListener('click', authenticate);
+            document.getElementById('logoutBtn').addEventListener('click', logout);
+            
+            // Handle Enter key in password input
+            document.getElementById('authPassword').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    authenticate();
+                }
+            });
             
             function formatDateTime(dateTimeStr) {
                 if (!dateTimeStr) return 'N/A';

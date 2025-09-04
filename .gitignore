@@ -53,13 +53,29 @@ Thumbs.db
 logs/
 
 # Uploads
+uploads/
+*.xlsx
+*.xls
 
+# Database files
+db/
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+database_backups/
+*.backup
+
+# Instance data
+instance/
 
 # Test data
-
+test_data/
 
 # Temporary files
 *.tmp
 *.temp
 
 # App specific
+.env
