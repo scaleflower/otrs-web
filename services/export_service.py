@@ -159,7 +159,7 @@ class ExportService:
                     content.append(f"{state}: {count}")
                 content.append("")
             
-            # Age segments
+            # Age segments with details
             if 'age_segments' in stats:
                 content.append("AGE SEGMENTS (Open Tickets)")
                 content.append("-" * 40)
@@ -168,6 +168,9 @@ class ExportService:
                 content.append(f"48-72 hours: {stats['age_segments']['age_48_72h']}")
                 content.append(f">72 hours: {stats['age_segments']['age_72h']}")
                 content.append("")
+                
+                # Add age segment details
+                self._add_age_segment_details_to_text(content)
             
             # Convert to text
             text_content = "\n".join(content)
@@ -295,7 +298,7 @@ class ExportService:
             
             for segment_name, segment_data in age_segments_details.items():
                 if not segment_data.empty:
-                    segment_details = segment_data[['TicketNumber', 'Age', 'Created', 'Priority']].copy()
+                    segment_details = segment_data[['TicketNumber', 'Age', 'Created', 'Priority', 'State']].copy()
                     sheet_name = f"Age {segment_name.replace('_', '-')} Details"
                     segment_details.to_excel(writer, sheet_name=sheet_name[:31], index=False)
         
@@ -548,6 +551,70 @@ class ExportService:
                 
                 content.append("-" * 30)
                 content.append(f"{'总计':<20} {totals_data.get(responsible, 0):<10}")
+    
+    def _add_age_segment_details_to_text(self, content):
+        """Add age segment details to text export"""
+        try:
+            # Get all open tickets from database
+            tickets = OtrsTicket.query.filter(OtrsTicket.closed_date.is_(None)).all()
+            
+            if not tickets:
+                content.append("No open tickets found for age segment details.")
+                content.append("")
+                return
+            
+            # Convert tickets to DataFrame for easier processing
+            ticket_data = []
+            for ticket in tickets:
+                ticket_data.append({
+                    'TicketNumber': ticket.ticket_number,
+                    'Created': ticket.created_date,
+                    'State': ticket.state,
+                    'Priority': ticket.priority,
+                    'Age': ticket.age,
+                    'AgeHours': ticket.age_hours
+                })
+            
+            df = pd.DataFrame(ticket_data)
+            
+            if df.empty:
+                content.append("No open tickets data available.")
+                content.append("")
+                return
+            
+            # Parse age hours using utility function
+            df['age_hours'] = df['Age'].apply(parse_age_to_hours)
+            
+            # Define age segments
+            age_segments = {
+                '≤24 hours': df[df['age_hours'] <= 24],
+                '24-48 hours': df[(df['age_hours'] > 24) & (df['age_hours'] <= 48)],
+                '48-72 hours': df[(df['age_hours'] > 48) & (df['age_hours'] <= 72)],
+                '>72 hours': df[df['age_hours'] > 72]
+            }
+            
+            # Add details for each segment
+            for segment_name, segment_data in age_segments.items():
+                if not segment_data.empty:
+                    content.append(f"{segment_name.upper()} DETAILS")
+                    content.append("-" * 60)
+                    content.append(f"{'Ticket Number':<20} {'Age':<15} {'Created':<20} {'Priority':<10} {'State':<15}")
+                    content.append("-" * 85)
+                    
+                    for _, ticket in segment_data.iterrows():
+                        ticket_num = str(ticket['TicketNumber'])[:19] if ticket['TicketNumber'] else 'N/A'
+                        age = str(ticket['Age'])[:14] if ticket['Age'] else 'N/A'
+                        created = str(ticket['Created'])[:19] if ticket['Created'] else 'N/A'
+                        priority = str(ticket['Priority'])[:9] if ticket['Priority'] else 'N/A'
+                        state = str(ticket['State'])[:14] if ticket['State'] else 'N/A'
+                        
+                        content.append(f"{ticket_num:<20} {age:<15} {created:<20} {priority:<10} {state:<15}")
+                    
+                    content.append("")
+                    
+        except Exception as e:
+            content.append(f"Error generating age segment details: {str(e)}")
+            content.append("")
     
     def _get_period_label(self, period):
         """Get period label for display"""

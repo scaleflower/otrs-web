@@ -178,7 +178,8 @@ def get_age_details():
                 'ticket_number': ticket.ticket_number or 'N/A',
                 'age': ticket.age or 'N/A',
                 'created': str(ticket.created_date) if ticket.created_date else 'N/A',
-                'priority': ticket.priority or 'N/A'
+                'priority': ticket.priority or 'N/A',
+                'state': ticket.state or 'N/A'
             })
         
         # Log query

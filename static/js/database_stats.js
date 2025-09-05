@@ -298,6 +298,7 @@ function showAgeDetails(details) {
             <td>${detail.age || 'N/A'}</td>
             <td>${detail.created || 'N/A'}</td>
             <td>${detail.priority || 'N/A'}</td>
+            <td>${detail.state || 'N/A'}</td>
         `;
         tbody.appendChild(row);
     });
