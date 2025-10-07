@@ -38,6 +38,15 @@
                 <div class="latest-upload-card">
                     <div class="latest-upload-header">
                         <h3><i class="fas fa-history"></i> 最近更新信息</h3>
+                        <div class="update-controls">
+                            <button id="checkUpdateButton" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-sync-alt"></i> 检查更新
+                            </button>
+                            <button id="updateIconButton" class="update-icon-button" style="display: none;" title="发现新版本">
+                                <i class="fas fa-rocket"></i>
+                                <span id="updateIconBadge" class="update-icon-badge">NEW</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="latest-upload-content" id="latestUploadContent">
                         <div class="upload-info-loading">
@@ -280,6 +289,42 @@
     </div>
 
     <!-- JavaScript -->
+    <div id="updateModal" class="update-modal">
+        <div class="update-modal-dialog">
+            <button type="button" class="update-modal-close" id="updateModalClose" aria-label="关闭">&times;</button>
+            <div class="update-modal-header">
+                <h3><i class="fas fa-rocket"></i> 应用更新</h3>
+                <p class="update-modal-meta">
+                    当前版本：<span id="updateModalCurrentVersion">-</span>
+                    <span class="meta-separator">|</span>
+                    最新版本：<span id="updateModalLatestVersion">-</span>
+                </p>
+                <p class="update-modal-published">发布时间：<span id="updateModalPublished">-</span></p>
+            </div>
+            <div class="update-modal-body">
+                <div class="update-modal-notes" id="updateModalNotes">
+                    <p>正在加载发布说明...</p>
+                </div>
+                <a id="updateModalReleaseLink" href="#" target="_blank" rel="noopener" class="update-modal-link">
+                    <i class="fas fa-external-link-alt"></i> 查看 GitHub 发布详情
+                </a>
+                <p class="update-modal-status" id="updateModalStatus"></p>
+                <div class="update-modal-form">
+                    <label for="updatePasswordInput">管理员密码</label>
+                    <input type="password" id="updatePasswordInput" placeholder="请输入管理员密码以执行更新">
+                </div>
+                <div class="update-modal-feedback" id="updateModalFeedback"></div>
+            </div>
+            <div class="update-modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" id="updateModalRemindBtn">稍后提醒</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="updateModalCancelBtn">关闭</button>
+                <button type="button" class="btn btn-primary btn-sm" id="updateModalConfirmBtn">
+                    <i class="fas fa-play"></i> 开始更新
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>

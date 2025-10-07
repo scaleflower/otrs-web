@@ -15,6 +15,27 @@ const exportExcelBtn = document.getElementById('exportExcel');
 const exportTxtBtn = document.getElementById('exportTxt');
 const reuploadBtn = document.getElementById('reuploadBtn');
 
+// Update notification elements
+const updateIconButton = document.getElementById('updateIconButton');
+const updateIconBadge = document.getElementById('updateIconBadge');
+const updateModal = document.getElementById('updateModal');
+const updateModalClose = document.getElementById('updateModalClose');
+const updateModalCancelBtn = document.getElementById('updateModalCancelBtn');
+const updateModalConfirmBtn = document.getElementById('updateModalConfirmBtn');
+const updateModalNotes = document.getElementById('updateModalNotes');
+const updateModalStatus = document.getElementById('updateModalStatus');
+const updateModalLink = document.getElementById('updateModalReleaseLink');
+const updateModalPassword = document.getElementById('updatePasswordInput');
+const updateModalFeedback = document.getElementById('updateModalFeedback');
+const updateModalCurrentVersion = document.getElementById('updateModalCurrentVersion');
+const updateModalLatestVersion = document.getElementById('updateModalLatestVersion');
+const updateModalPublished = document.getElementById('updateModalPublished');
+const updateModalRemindBtn = document.getElementById('updateModalRemindBtn');
+
+let updateStatusData = null;
+let updateStatusTimer = null;
+let restartNoticeShown = false;
+
 // Chart instances
 let emptyFirstResponseChart = null;
 
@@ -22,6 +43,7 @@ let emptyFirstResponseChart = null;
 document.addEventListener('DOMContentLoaded', function() {
     initializeEventListeners();
     loadLatestUploadInfo();
+    initializeUpdateNotifications();
 });
 
 function initializeEventListeners() {
@@ -648,3 +670,492 @@ function animateValue(element, start, end, duration) {
     };
     window.requestAnimationFrame(step);
 }
+
+// ---------------------------------------------------------------------------
+// Application update notifications
+// ---------------------------------------------------------------------------
+
+function initializeUpdateNotifications() {
+    if (!updateIconButton && !updateModal) {
+        return;
+    }
+
+    if (updateIconButton) {
+        updateIconButton.addEventListener('click', () => openUpdateModal(true));
+    }
+    if (updateModalRemindBtn) {
+        updateModalRemindBtn.addEventListener('click', () => {
+            acknowledgeUpdateNotification();
+            closeUpdateModal();
+        });
+    }
+    if (updateModalConfirmBtn) {
+        updateModalConfirmBtn.addEventListener('click', triggerUpdateFromModal);
+    }
+    if (updateModalClose) {
+        updateModalClose.addEventListener('click', closeUpdateModal);
+    }
+    if (updateModalCancelBtn) {
+        updateModalCancelBtn.addEventListener('click', closeUpdateModal);
+    }
+    if (updateModal) {
+        updateModal.addEventListener('click', (event) => {
+            if (event.target === updateModal) {
+                closeUpdateModal();
+            }
+        });
+    }
+
+    fetchUpdateStatus();
+}
+
+function scheduleUpdateStatusPoll(seconds) {
+    if (updateStatusTimer) {
+        clearTimeout(updateStatusTimer);
+    }
+    updateStatusTimer = setTimeout(fetchUpdateStatus, Math.max(seconds, 5) * 1000);
+}
+
+async function fetchUpdateStatus() {
+    if (!updateIconButton && !updateModal) {
+        return;
+    }
+    try {
+        const response = await fetch('/api/update/status');
+        if (!response.ok) {
+            throw new Error('无法获取更新状态');
+        }
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || '读取更新状态失败');
+        }
+        updateStatusData = data.status || null;
+        applyUpdateIndicatorState(updateStatusData);
+        const pollSeconds = getUpdatePollInterval(updateStatusData);
+        scheduleUpdateStatusPoll(pollSeconds);
+    } catch (error) {
+        console.error('Error fetching update status:', error);
+        scheduleUpdateStatusPoll(180);
+    }
+}
+
+function getUpdatePollInterval(status) {
+    if (!status) return 180;
+    switch (status.status) {
+        case 'updating':
+        case 'restarting':
+            return 5;
+        case 'update_available':
+            return 60;
+        case 'update_failed':
+        case 'error':
+            return 120;
+        default:
+            return 180;
+    }
+}
+
+function applyUpdateIndicatorState(status) {
+    if (!updateIconButton) return;
+
+    updateIconButton.style.display = 'none';
+    updateIconButton.classList.remove('pulse', 'spinning', 'error');
+    updateIconButton.disabled = false;
+
+    if (updateIconBadge) {
+        updateIconBadge.textContent = '';
+    }
+
+    if (!status || status.update_enabled === false) {
+        return;
+    }
+
+    const statusCode = status.status || 'unknown';
+
+    switch (statusCode) {
+        case 'update_available':
+            if (status.notified_at) {
+                return;
+            }
+            updateIconButton.style.display = 'inline-flex';
+            updateIconButton.classList.add('pulse');
+            if (updateIconBadge) updateIconBadge.textContent = '更新';
+            break;
+        case 'updating':
+            updateIconButton.style.display = 'inline-flex';
+            updateIconButton.classList.add('spinning');
+            if (updateIconBadge) updateIconBadge.textContent = '更新中';
+            break;
+        case 'restarting':
+            updateIconButton.style.display = 'inline-flex';
+            updateIconButton.classList.add('spinning');
+            updateIconButton.disabled = true;
+            if (updateIconBadge) updateIconBadge.textContent = '重启中';
+            if (!restartNoticeShown) {
+                restartNoticeShown = true;
+                setTimeout(() => window.location.reload(), 5000);
+            }
+            break;
+        case 'update_failed':
+            updateIconButton.style.display = 'inline-flex';
+            updateIconButton.classList.add('error');
+            if (updateIconBadge) updateIconBadge.textContent = '失败';
+            break;
+        default:
+            return;
+    }
+}
+
+function openUpdateModal(focusPassword = false) {
+    if (!updateModal) return;
+    populateUpdateModal();
+    updateModal.classList.add('visible');
+    if (focusPassword && updateModalPassword) {
+        setTimeout(() => updateModalPassword.focus(), 150);
+    }
+}
+
+function populateUpdateModal() {
+    if (!updateStatusData) {
+        if (updateModalNotes) {
+            updateModalNotes.innerHTML = '<p>当前没有可用的更新信息。</p>';
+        }
+        if (updateModalStatus) {
+            updateModalStatus.textContent = '';
+        }
+        if (updateModalLink) {
+            updateModalLink.style.display = 'none';
+        }
+        if (updateModalConfirmBtn) {
+            updateModalConfirmBtn.style.display = 'none';
+        }
+        if (updateModalRemindBtn) {
+            updateModalRemindBtn.style.display = 'none';
+        }
+        return;
+    }
+
+    const latest = updateStatusData.latest_version || updateStatusData.current_version || '未知版本';
+    const current = updateStatusData.current_version || '未知版本';
+    const statusCode = updateStatusData.status || 'unknown';
+
+    if (updateModalCurrentVersion) updateModalCurrentVersion.textContent = current;
+    if (updateModalLatestVersion) updateModalLatestVersion.textContent = latest;
+    if (updateModalPublished) updateModalPublished.textContent = formatDisplayDate(updateStatusData.published_at);
+
+    if (updateModalNotes) {
+        updateModalNotes.innerHTML = formatReleaseNotes(updateStatusData.release_notes);
+    }
+    if (updateModalLink) {
+        if (updateStatusData.release_url) {
+            updateModalLink.href = updateStatusData.release_url;
+            updateModalLink.style.display = 'inline-flex';
+        } else {
+            updateModalLink.style.display = 'none';
+        }
+    }
+    if (updateModalStatus) {
+        updateModalStatus.textContent = describeUpdateStatus(updateStatusData);
+    }
+    if (updateModalFeedback) {
+        updateModalFeedback.textContent = '';
+        updateModalFeedback.className = 'update-modal-feedback';
+    }
+
+    const requiresPassword = statusCode === 'update_available' || statusCode === 'update_failed';
+    if (updateModalPassword) {
+        updateModalPassword.value = '';
+        updateModalPassword.disabled = !requiresPassword;
+    }
+
+    if (updateModalConfirmBtn) {
+        if (statusCode === 'update_available') {
+            updateModalConfirmBtn.style.display = 'inline-flex';
+            updateModalConfirmBtn.disabled = false;
+            updateModalConfirmBtn.innerHTML = '<i class="fas fa-play"></i> 开始更新';
+        } else if (statusCode === 'update_failed') {
+            updateModalConfirmBtn.style.display = 'inline-flex';
+            updateModalConfirmBtn.disabled = false;
+            updateModalConfirmBtn.innerHTML = '<i class="fas fa-redo"></i> 重新尝试';
+        } else {
+            updateModalConfirmBtn.style.display = 'none';
+        }
+    }
+
+    if (updateModalRemindBtn) {
+        if (statusCode === 'update_available') {
+            updateModalRemindBtn.style.display = 'inline-flex';
+            updateModalRemindBtn.disabled = false;
+        } else {
+            updateModalRemindBtn.style.display = 'none';
+        }
+    }
+}
+
+function closeUpdateModal() {
+    if (!updateModal) return;
+    updateModal.classList.remove('visible');
+}
+
+async function acknowledgeUpdateNotification() {
+    try {
+        const response = await fetch('/api/update/ack', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        if (!response.ok) {
+            throw new Error('通知服务器失败');
+        }
+        if (updateStatusData) {
+            updateStatusData.notified_at = new Date().toISOString();
+        }
+        applyUpdateIndicatorState(updateStatusData);
+    } catch (error) {
+        console.error('Error acknowledging update notification:', error);
+    }
+}
+
+async function triggerUpdateFromModal() {
+    if (!updateStatusData || !updateModalConfirmBtn) return;
+
+    const password = updateModalPassword ? updateModalPassword.value.trim() : '';
+    if (!password) {
+        if (updateModalFeedback) {
+            updateModalFeedback.textContent = '请先输入管理员密码。';
+            updateModalFeedback.className = 'update-modal-feedback error';
+        }
+        if (updateModalPassword) updateModalPassword.focus();
+        return;
+    }
+
+    updateModalConfirmBtn.disabled = true;
+    updateModalConfirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在启动';
+    if (updateModalFeedback) {
+        updateModalFeedback.textContent = '';
+        updateModalFeedback.className = 'update-modal-feedback';
+    }
+
+    try {
+        const response = await fetch('/api/update/trigger', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                target_version: updateStatusData.latest_version,
+                auth_password: password
+            })
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.error || '更新启动失败');
+        }
+
+        if (updateModalFeedback) {
+            updateModalFeedback.textContent = '更新已开始，请稍候。';
+            updateModalFeedback.className = 'update-modal-feedback success';
+        }
+        closeUpdateModal();
+        fetchUpdateStatus();
+    } catch (error) {
+        if (updateModalFeedback) {
+            updateModalFeedback.textContent = error.message;
+            updateModalFeedback.className = 'update-modal-feedback error';
+        }
+        if (updateModalConfirmBtn) {
+            updateModalConfirmBtn.disabled = false;
+            updateModalConfirmBtn.innerHTML = '<i class="fas fa-play"></i> 开始更新';
+        }
+    }
+}
+
+
+function formatReleaseNotes(notes) {
+    if (!notes) {
+        return '<p>该版本未提供发布说明。</p>';
+    }
+    const escaped = escapeHtml(notes);
+    return escaped.replace(/\r?\n/g, '<br>');
+}
+
+function escapeHtml(str) {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function formatDisplayDate(value) {
+    if (!value) return '未知';
+    try {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return value;
+        }
+        return date.toLocaleString();
+    } catch (error) {
+        return value;
+    }
+}
+
+function describeUpdateStatus(status) {
+    if (!status) return '';
+    const latest = status.latest_version || status.current_version || '';
+    switch (status.status) {
+        case 'update_available':
+            return `即将更新到版本 ${latest}。`;
+        case 'updating':
+            return '更新正在进行中，请稍候。';
+        case 'restarting':
+            return '更新已完成，应用即将自动重启。';
+        case 'update_failed':
+            return `更新失败：${status.last_error || '未知原因'}`;
+        case 'error':
+            return `检查更新时发生错误：${status.last_error || '未知原因'}`;
+        default:
+            return '';
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Manual update check functionality
+// ---------------------------------------------------------------------------
+
+// Initialize manual update check button
+function initializeManualUpdateCheck() {
+    const checkUpdateButton = document.getElementById('checkUpdateButton');
+    if (checkUpdateButton) {
+        checkUpdateButton.addEventListener('click', handleManualUpdateCheck);
+    }
+}
+
+// Handle manual update check
+async function handleManualUpdateCheck() {
+    const checkUpdateButton = document.getElementById('checkUpdateButton');
+    if (!checkUpdateButton) return;
+
+    // Show loading state
+    const originalText = checkUpdateButton.innerHTML;
+    checkUpdateButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 检查中...';
+    checkUpdateButton.disabled = true;
+
+    try {
+        const response = await fetch('/api/update/check', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            let errorMessage = data.error || '检查更新失败';
+            
+            // 特殊处理速率限制错误
+            if (errorMessage.includes('rate limit exceeded')) {
+                errorMessage = 'GitHub API 速率限制，请稍后再试或配置GitHub Token';
+            } else if (errorMessage.includes('GitHub Token未配置')) {
+                errorMessage = 'GitHub Token未配置，请联系管理员设置APP_UPDATE_GITHUB_TOKEN';
+            } else if (errorMessage.includes('Failed to contact GitHub')) {
+                errorMessage = '无法连接到GitHub，请检查网络连接';
+            }
+            
+            throw new Error(errorMessage);
+        }
+
+        // Update the status data
+        updateStatusData = {
+            ...updateStatusData,
+            ...data,
+            status: data.status,
+            latest_version: data.latest_version,
+            current_version: data.current_version,
+            release_notes: data.release_notes,
+            release_url: data.release_url,
+            published_at: data.published_at
+        };
+
+        // Apply the new state
+        applyUpdateIndicatorState(updateStatusData);
+
+        // Show appropriate message based on result
+        if (data.status === 'update_available') {
+            showUpdateNotification('发现新版本！', 'success');
+            // Auto-open update modal if new version is available
+            setTimeout(() => openUpdateModal(true), 1000);
+        } else if (data.status === 'up_to_date') {
+            showUpdateNotification('您使用的是最新版本！', 'info');
+        } else {
+            showUpdateNotification(data.message || '检查完成', 'info');
+        }
+
+    } catch (error) {
+        console.error('Error checking for updates:', error);
+        showUpdateNotification(error.message, 'error');
+    } finally {
+        // Restore button state
+        checkUpdateButton.innerHTML = originalText;
+        checkUpdateButton.disabled = false;
+    }
+}
+
+// Show update notification
+function showUpdateNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `update-notification update-notification-${type}`;
+    notification.innerHTML = `
+        <div class="update-notification-content">
+            <i class="fas fa-${getNotificationIcon(type)}"></i>
+            <span>${message}</span>
+        </div>
+    `;
+
+    // Add to page
+    document.body.appendChild(notification);
+
+    // Show with animation
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 10);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 5000);
+}
+
+// Get appropriate icon for notification type
+function getNotificationIcon(type) {
+    switch (type) {
+        case 'success':
+            return 'check-circle';
+        case 'error':
+            return 'exclamation-triangle';
+        case 'warning':
+            return 'exclamation-circle';
+        default:
+            return 'info-circle';
+    }
+}
+
+// Initialize manual update check when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    initializeEventListeners();
+    loadLatestUploadInfo();
+    initializeUpdateNotifications();
+    initializeManualUpdateCheck(); // Add this line
+});

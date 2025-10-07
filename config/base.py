@@ -64,11 +64,11 @@ class BaseConfig:
 
     # Auto update settings
     APP_UPDATE_ENABLED = os.environ.get('APP_UPDATE_ENABLED', 'true').lower() == 'true'
-    APP_UPDATE_REPO = os.environ.get('APP_UPDATE_REPO', 'Jacky/otrs-web')
+    APP_UPDATE_REPO = os.environ.get('APP_UPDATE_REPO', 'scaleflower/otrs-web')
     APP_UPDATE_BRANCH = os.environ.get('APP_UPDATE_BRANCH', 'main')
-    APP_UPDATE_POLL_INTERVAL = int(os.environ.get('APP_UPDATE_POLL_INTERVAL', '3600'))  # seconds
     APP_UPDATE_SCRIPT = os.environ.get('APP_UPDATE_SCRIPT', 'scripts/update_app.py')
     APP_UPDATE_GITHUB_TOKEN = os.environ.get('APP_UPDATE_GITHUB_TOKEN')
+    APP_UPDATE_RESTART_DELAY = int(os.environ.get('APP_UPDATE_RESTART_DELAY', '5'))
 
     @staticmethod
     def init_app(app):
