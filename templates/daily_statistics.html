@@ -282,7 +282,9 @@
                     return;
                 }
                 
-                stats.forEach(stat => {
+                const limitedStats = stats.slice(0, 10);
+
+                limitedStats.forEach(stat => {
                     const row = document.createElement('tr');
                     row.innerHTML = `
                         <td>${stat.date}</td>

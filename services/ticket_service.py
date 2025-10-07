@@ -37,7 +37,7 @@ class TicketService:
             'responsible': ['Responsible', 'responsible', 'Assignee', 'assignee', '处理人', '负责人']
         }
     
-    def process_upload(self, file, clear_existing=False):
+    def process_upload(self, file, clear_existing=True):
         """Process uploaded Excel file and import tickets"""
         try:
             # Step 1: Validate file
@@ -81,7 +81,13 @@ class TicketService:
             
             # Step 8: Create upload record
             update_processing_status(6, 'Creating upload record', 'Saving upload details...')
-            upload_record = self._create_upload_record(file.filename, new_records_count, total_database_count, clear_existing)
+            upload_record = self._create_upload_record(
+                file.filename,
+                saved_filename,
+                new_records_count,
+                total_database_count,
+                clear_existing
+            )
             
             update_processing_status(7, 'Processing completed!', f'Successfully imported {new_records_count} records')
             
@@ -217,11 +223,14 @@ class TicketService:
         
         return new_records_count
     
-    def _create_upload_record(self, filename, new_records_count, total_database_count, clear_existing):
+    def _create_upload_record(self, filename, stored_filename, new_records_count, total_database_count, clear_existing):
         """Create upload detail record with both new and total counts"""
         import_mode = 'clear_existing' if clear_existing else 'incremental'
+        safe_stored_filename = stored_filename[:255] if stored_filename else None
+
         upload_record = UploadDetail(
             filename=filename,
+            stored_filename=safe_stored_filename,
             record_count=total_database_count,      # Total records in database after import
             new_records_count=new_records_count,    # Only newly imported records
             import_mode=import_mode

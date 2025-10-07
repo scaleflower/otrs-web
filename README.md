@@ -14,6 +14,7 @@
 - 📅 **每日统计**: 自动计算每日工单统计数据
 - 🔄 **实时监控**: 数据库状态实时监控
 - 📋 **详细报告**: 多维度详细分析报告
+- 🚀 **自动更新提醒**: GitHub 发布新版本时自动通知并支持一键更新
 
 ## 完整功能列表
 
@@ -76,6 +77,11 @@
 - `POST /api/calculate-daily-stats` - 手动计算每日统计
 - `GET /api/export-execution-logs` - 导出执行日志
 
+**应用更新相关:**
+- `GET /api/update/status` - 查询当前版本及最新发布状态
+- `POST /api/update/ack` - 标记客户端已读更新提醒
+- `POST /api/update/trigger` - 触发应用自动更新（需管理员密码）
+
 ### ⚡ JavaScript 功能文件
 
 1. **script.js** - 主页面功能
@@ -104,6 +110,7 @@
 - DailyStatistics - 每日统计数据
 - StatisticsConfig - 统计配置
 - StatisticsLog - 统计执行日志
+- AppUpdateStatus - 应用更新状态记录
 
 **自动功能:**
 - 每日23:59自动计算年龄分布统计
@@ -120,6 +127,29 @@
   - numpy>=1.21.0
   - matplotlib>=3.5.0
   - gunicorn>=20.1.0 (生产环境)
+  - Flask-SQLAlchemy>=3.0.0
+  - APScheduler>=3.10.0
+  - tzlocal>=3.0
+  - python-dotenv>=1.0.0
+  - requests>=2.31.0
+
+## 自动更新配置
+
+- 设置环境变量启用/配置自动更新：
+  - `APP_UPDATE_ENABLED`（默认为 `true`）控制是否启用自动更新。
+  - `APP_UPDATE_REPO` 设置 GitHub 仓库（默认为 `Jacky/otrs-web`）。
+  - `APP_UPDATE_BRANCH` 作为无标签时的备用分支，默认 `main`。
+  - `APP_UPDATE_POLL_INTERVAL` 控制后台轮询 GitHub 发布的周期（秒）。
+  - `APP_UPDATE_GITHUB_TOKEN` 可选的 GitHub Token，用于提高速率或访问私有仓库。
+- 服务器上提供 `scripts/update_app.py` 脚本：
+  - 自动执行 `git fetch`、切换标签/分支、安装依赖并运行升级脚本。
+  - 支持 `--skip-deps`、`--pip-extra-args` 等参数，便于自定义部署流程。
+- 后端启动时会执行一次版本检查，之后由调度器按配置周期轮询。
+- 管理端调用顺序：
+  1. 前端轮询 `GET /api/update/status` 获取最新发布信息；
+  2. 弹窗提醒后通过 `POST /api/update/ack` 标记已读；
+  3. 当用户确认升级时调用 `POST /api/update/trigger`（需管理员密码）启动脚本；
+  4. 调用 `GET /api/update/status` 可查看更新进度与结果，失败时会返回错误原因。
 
 ## 快速开始
 

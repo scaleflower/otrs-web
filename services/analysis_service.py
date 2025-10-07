@@ -204,21 +204,41 @@ class AnalysisService:
             local_tz = timezone(timedelta(hours=8))  # Asia/Shanghai UTC+8
             local_time = datetime.now(local_tz).replace(tzinfo=None)  # Remove timezone info for storage
             
-            log_entry = StatisticsLog(
-                execution_time=local_time,
-                statistic_date=today,
-                opening_balance=opening_balance,
-                new_tickets=new_tickets,
-                resolved_tickets=resolved_tickets,
-                closing_balance=closing_balance,
-                age_lt_24h=age_lt_24h,
-                age_24_48h=age_24_48h,
-                age_48_72h=age_48_72h,
-                age_72_96h=age_72_96h,
-                age_gt_96h=age_gt_96h,
-                status='success'
-            )
-            db.session.add(log_entry)
+            existing_log = StatisticsLog.query.filter(
+                StatisticsLog.statistic_date == today,
+                StatisticsLog.status == 'success'
+            ).order_by(StatisticsLog.execution_time.desc()).first()
+
+            if existing_log:
+                existing_log.execution_time = local_time
+                existing_log.opening_balance = opening_balance
+                existing_log.new_tickets = new_tickets
+                existing_log.resolved_tickets = resolved_tickets
+                existing_log.closing_balance = closing_balance
+                existing_log.age_lt_24h = age_lt_24h
+                existing_log.age_24_48h = age_24_48h
+                existing_log.age_48_72h = age_48_72h
+                existing_log.age_72_96h = age_72_96h
+                existing_log.age_gt_96h = age_gt_96h
+                existing_log.error_message = None
+                existing_log.status = 'success'
+                existing_log.created_at = datetime.utcnow()
+            else:
+                log_entry = StatisticsLog(
+                    execution_time=local_time,
+                    statistic_date=today,
+                    opening_balance=opening_balance,
+                    new_tickets=new_tickets,
+                    resolved_tickets=resolved_tickets,
+                    closing_balance=closing_balance,
+                    age_lt_24h=age_lt_24h,
+                    age_24_48h=age_24_48h,
+                    age_48_72h=age_48_72h,
+                    age_72_96h=age_72_96h,
+                    age_gt_96h=age_gt_96h,
+                    status='success'
+                )
+                db.session.add(log_entry)
             
             db.session.commit()
             print(f"✓ Daily statistics calculated for {today}: "
@@ -259,16 +279,22 @@ class AnalysisService:
         stats = {}
         
         # Build base query with period filtering
-        base_query = OtrsTicket.query.filter(OtrsTicket.responsible.in_(selected_responsibles))
+        base_query = OtrsTicket.query.filter(
+            OtrsTicket.responsible.in_(selected_responsibles),
+            OtrsTicket.closed_date.isnot(None)
+        )
         if date_filters:
             base_query = base_query.filter(*date_filters)
-        
+
         # Total tickets by responsible (within period)
         total_by_responsible = db.session.query(
             OtrsTicket.responsible,
             db.func.count(OtrsTicket.id).label('count')
-        ).filter(OtrsTicket.responsible.in_(selected_responsibles))
-        
+        ).filter(
+            OtrsTicket.responsible.in_(selected_responsibles),
+            OtrsTicket.closed_date.isnot(None)
+        )
+
         if date_filters:
             total_by_responsible = total_by_responsible.filter(*date_filters)
         
@@ -340,16 +366,16 @@ class AnalysisService:
         if period == 'day':
             # Group all data by day
             daily_data = db.session.query(
-                db.func.date(OtrsTicket.created_date).label('date'),
+                db.func.date(OtrsTicket.closed_date).label('date'),
                 OtrsTicket.responsible,
                 db.func.count(OtrsTicket.id).label('count')
             ).filter(
                 OtrsTicket.responsible.in_(selected_responsibles),
-                OtrsTicket.created_date.isnot(None)
+                OtrsTicket.closed_date.isnot(None)
             ).group_by(
-                db.func.date(OtrsTicket.created_date),
+                db.func.date(OtrsTicket.closed_date),
                 OtrsTicket.responsible
-            ).order_by(db.func.date(OtrsTicket.created_date).desc()).all()
+            ).order_by(db.func.date(OtrsTicket.closed_date).desc()).all()
             
             # Organize data by date
             for record in daily_data:
@@ -362,16 +388,16 @@ class AnalysisService:
             # Group all data by week
             # Use PostgreSQL/MySQL compatible week calculation
             weekly_data = db.session.query(
-                db.func.strftime('%Y-%W', OtrsTicket.created_date).label('week'),
+                db.func.strftime('%Y-%W', OtrsTicket.closed_date).label('week'),
                 OtrsTicket.responsible,
                 db.func.count(OtrsTicket.id).label('count')
             ).filter(
                 OtrsTicket.responsible.in_(selected_responsibles),
-                OtrsTicket.created_date.isnot(None)
+                OtrsTicket.closed_date.isnot(None)
             ).group_by(
-                db.func.strftime('%Y-%W', OtrsTicket.created_date),
+                db.func.strftime('%Y-%W', OtrsTicket.closed_date),
                 OtrsTicket.responsible
-            ).order_by(db.func.strftime('%Y-%W', OtrsTicket.created_date).desc()).all()
+            ).order_by(db.func.strftime('%Y-%W', OtrsTicket.closed_date).desc()).all()
             
             # Organize data by week
             for record in weekly_data:
@@ -383,16 +409,16 @@ class AnalysisService:
         elif period == 'month':
             # Group all data by month
             monthly_data = db.session.query(
-                db.func.strftime('%Y-%m', OtrsTicket.created_date).label('month'),
+                db.func.strftime('%Y-%m', OtrsTicket.closed_date).label('month'),
                 OtrsTicket.responsible,
                 db.func.count(OtrsTicket.id).label('count')
             ).filter(
                 OtrsTicket.responsible.in_(selected_responsibles),
-                OtrsTicket.created_date.isnot(None)
+                OtrsTicket.closed_date.isnot(None)
             ).group_by(
-                db.func.strftime('%Y-%m', OtrsTicket.created_date),
+                db.func.strftime('%Y-%m', OtrsTicket.closed_date),
                 OtrsTicket.responsible
-            ).order_by(db.func.strftime('%Y-%m', OtrsTicket.created_date).desc()).all()
+            ).order_by(db.func.strftime('%Y-%m', OtrsTicket.closed_date).desc()).all()
             
             # Organize data by month
             for record in monthly_data:

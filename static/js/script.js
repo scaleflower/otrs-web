@@ -14,8 +14,6 @@ const errorMessage = document.getElementById('errorMessage');
 const exportExcelBtn = document.getElementById('exportExcel');
 const exportTxtBtn = document.getElementById('exportTxt');
 const reuploadBtn = document.getElementById('reuploadBtn');
-const clearDatabaseBtn = document.getElementById('clearDatabaseBtn');
-const clearStatus = document.getElementById('clearStatus');
 
 // Chart instances
 let emptyFirstResponseChart = null;
@@ -39,9 +37,6 @@ function initializeEventListeners() {
     
     // Re-upload button
     reuploadBtn.addEventListener('click', handleReupload);
-    
-    // Clear database button
-    clearDatabaseBtn.addEventListener('click', handleClearDatabase);
     
     // Age segment click events
     document.addEventListener('click', function(e) {
@@ -583,65 +578,6 @@ function updateEmptyFirstResponseTable(stats) {
         tableBody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #dc3545;">${error.message}</td></tr>`;
     });
 }
-
-// Handle clear database button click
-function handleClearDatabase() {
-    // Confirm with user before clearing database
-    if (!confirm('确定要清除数据库中的所有工单数据吗？此操作不可撤销！')) {
-        return;
-    }
-    
-    // Show loading state
-    const originalText = clearDatabaseBtn.innerHTML;
-    clearDatabaseBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在清除...';
-    clearDatabaseBtn.disabled = true;
-    
-    // Send request to clear database
-    fetch('/clear-database', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(errorData => {
-                throw new Error(errorData.error || '清除数据库失败');
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            // Show success message
-            clearStatus.textContent = data.message;
-            clearStatus.style.display = 'block';
-            clearStatus.style.color = '#28a745';
-            
-            // If results are currently showing, refresh the page to reflect empty state
-            if (resultsSection.style.display !== 'none') {
-                setTimeout(() => {
-                    location.reload();
-                }, 2000);
-            }
-        } else {
-            throw new Error(data.error || '清除数据库失败');
-        }
-    })
-    .catch(error => {
-        clearStatus.textContent = error.message;
-        clearStatus.style.display = 'block';
-        clearStatus.style.color = '#dc3545';
-    })
-    .finally(() => {
-        // Restore button state after a delay
-        setTimeout(() => {
-            clearDatabaseBtn.innerHTML = originalText;
-            clearDatabaseBtn.disabled = false;
-        }, 2000);
-    });
-}
-
 // Load latest upload information
 function loadLatestUploadInfo() {
     const latestUploadContent = document.getElementById('latestUploadContent');
