@@ -19,6 +19,11 @@ import os
 
 from flask import Flask, render_template, request, send_file, jsonify, abort
 from datetime import datetime
+
+# 重新导入配置类，确保环境变量已加载
+import importlib
+import config
+importlib.reload(config)
 from config import Config
 from models import init_db
 from werkzeug.utils import secure_filename
@@ -48,7 +53,7 @@ init_services(app)
 # Perform an initial update check so clients know the latest version
 if app.config.get('APP_UPDATE_ENABLED', True):
     try:
-        update_service.check_for_updates(force=True)
+        update_service.check_for_updates()
     except Exception as exc:  # pragma: no cover - logging path
         app.logger.warning('Initial update check failed: %s', exc)
 
@@ -661,6 +666,15 @@ def api_update_status():
             'success': True,
             'status': status
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/check', methods=['POST'])
+def api_check_for_updates():
+    """Manually check for updates from GitHub"""
+    try:
+        result = update_service.check_for_updates()
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

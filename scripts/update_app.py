@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,35 @@ def run_command(command, cwd, env=None):
             f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
         )
     return result
+
+
+def backup_database(project_root):
+    """Create a backup of the database before update"""
+    # 检查多个可能的数据库路径
+    possible_db_paths = [
+        project_root / 'db' / 'otrs_data.db',      # 当前使用的数据库
+        project_root / 'instance' / 'otrs_web.db', # 可能的其他位置
+    ]
+    
+    db_path = None
+    for path in possible_db_paths:
+        if path.exists():
+            db_path = path
+            break
+    
+    if db_path:
+        backup_dir = project_root / 'database_backups'
+        backup_dir.mkdir(exist_ok=True)
+        
+        timestamp = os.environ.get('UPDATE_TIMESTAMP', 'manual')
+        backup_path = backup_dir / f'backup_before_update_{timestamp}.db'
+        
+        print(f"💾 Creating database backup: {db_path.name} -> {backup_path.name}")
+        shutil.copy2(db_path, backup_path)
+        return backup_path
+    
+    print("ℹ️  No database found to backup")
+    return None
 
 
 def parse_args():
@@ -48,6 +78,14 @@ def main():
     git_dir = project_root / '.git'
     if not git_dir.exists():
         raise SystemExit('This script must be executed inside a git repository')
+
+    # 0. Create database backup before starting update
+    print("🛡️  Creating database backup...")
+    backup_file = backup_database(project_root)
+    if backup_file:
+        print(f"✅ Database backup created: {backup_file.name}")
+    else:
+        print("ℹ️  No database found to backup")
 
     # 1. Fetch latest refs
     run_command(['git', 'fetch', '--tags', '--prune'], cwd=project_root, env=env)
