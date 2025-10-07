@@ -88,6 +88,7 @@ class UploadDetail(db.Model):
     record_count = db.Column(db.Integer, nullable=False)  # 当前数据库总记录数
     new_records_count = db.Column(db.Integer, default=0)  # 本次新增记录数
     import_mode = db.Column(db.String(50))  # Import mode: clear_existing or incremental
+    stored_filename = db.Column(db.String(255))  # Physically stored filename for downloads
     
     # Relationships
     statistics = db.relationship('Statistic', backref='upload', lazy=True)
@@ -103,5 +104,6 @@ class UploadDetail(db.Model):
             'upload_time': self.upload_time.isoformat() if self.upload_time else None,
             'record_count': self.record_count,
             'new_records_count': self.new_records_count,
-            'import_mode': self.import_mode
+            'import_mode': self.import_mode,
+            'stored_filename': self.stored_filename
         }

@@ -14,11 +14,22 @@ except ImportError:
 except Exception as e:
     print(f"⚠️  加载 .env 文件时出错：{e}")
 
-from flask import Flask, render_template, request, send_file, jsonify
+import glob
+import os
+
+from flask import Flask, render_template, request, send_file, jsonify, abort
 from datetime import datetime
 from config import Config
 from models import init_db
-from services import init_services, ticket_service, analysis_service, export_service, scheduler_service
+from werkzeug.utils import secure_filename
+from services import (
+    init_services,
+    ticket_service,
+    analysis_service,
+    export_service,
+    scheduler_service,
+    update_service
+)
 from utils import get_processing_status, validate_age_segment, validate_responsible_list, validate_json_data
 from utils.auth import require_daily_stats_password, PasswordProtection
 
@@ -34,6 +45,13 @@ init_db(app)
 # Initialize services
 init_services(app)
 
+# Perform an initial update check so clients know the latest version
+if app.config.get('APP_UPDATE_ENABLED', True):
+    try:
+        update_service.check_for_updates(force=True)
+    except Exception as exc:  # pragma: no cover - logging path
+        app.logger.warning('Initial update check failed: %s', exc)
+
 # Application version from config
 APP_VERSION = app.config.get('APP_VERSION', '1.2.3')
 
@@ -48,6 +66,71 @@ def view_uploads():
     from models import UploadDetail
     upload_sessions = UploadDetail.query.order_by(UploadDetail.upload_time.desc()).all()
     return render_template('uploads.html', upload_sessions=upload_sessions, APP_VERSION=APP_VERSION)
+
+
+@app.route('/uploads/download/<int:upload_id>')
+def download_upload(upload_id):
+    """Download the original Excel file for a specific upload"""
+    from models import UploadDetail, db
+
+    upload_record = UploadDetail.query.get_or_404(upload_id)
+    uploads_dir = app.config.get('UPLOAD_FOLDER') or 'uploads'
+    uploads_path = os.path.abspath(os.path.join(app.root_path, uploads_dir))
+
+    if not os.path.isdir(uploads_path):
+        abort(404, description='上传文件目录不存在')
+
+    def _candidate_path(filename):
+        if not filename:
+            return None
+        candidate = os.path.abspath(os.path.join(uploads_path, filename))
+        try:
+            if os.path.commonpath([uploads_path, candidate]) != uploads_path:
+                return None
+        except ValueError:
+            return None
+        return candidate if os.path.exists(candidate) else None
+
+    file_path = _candidate_path(upload_record.stored_filename)
+
+    if not file_path:
+        safe_original = secure_filename(upload_record.filename) if upload_record.filename else None
+        if safe_original:
+            pattern = os.path.join(uploads_path, f"*_{safe_original}")
+            matches = sorted(glob.glob(pattern), reverse=True)
+
+            if upload_record.upload_time:
+                prefix = upload_record.upload_time.strftime('%Y%m%d_%H%M%S')
+                for match in matches:
+                    if os.path.basename(match).startswith(prefix):
+                        file_path = match
+                        break
+
+            if not file_path and matches:
+                file_path = matches[0]
+
+            if file_path:
+                stored_name = os.path.basename(file_path)
+                if stored_name != upload_record.stored_filename:
+                    upload_record.stored_filename = stored_name
+                    try:
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+        
+        if file_path:
+            file_path = os.path.abspath(file_path)
+            try:
+                if os.path.commonpath([uploads_path, file_path]) != uploads_path:
+                    file_path = None
+            except ValueError:
+                file_path = None
+
+    if not file_path:
+        abort(404, description='上传文件不存在或已被删除')
+
+    download_name = upload_record.filename or os.path.basename(file_path)
+    return send_file(file_path, as_attachment=True, download_name=download_name)
 
 @app.route('/upload/<filename>')
 def view_upload_details(filename):
@@ -82,11 +165,8 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
         
-        # Get clear existing option from form data
-        clear_existing = request.form.get('clear_existing', 'false').lower() == 'true'
-        
         # Process upload using ticket service
-        result = ticket_service.process_upload(file, clear_existing)
+        result = ticket_service.process_upload(file)
         
         # Get analysis statistics
         stats = analysis_service.analyze_tickets_from_database()
@@ -344,6 +424,7 @@ def api_responsible_details():
         
         # Build base query for the responsible person
         base_query = OtrsTicket.query.filter(OtrsTicket.responsible == responsible)
+        closed_tickets_query = base_query.filter(OtrsTicket.closed_date.isnot(None))
         
         if period == 'age':
             # Age-based filtering (for total statistics)
@@ -362,18 +443,20 @@ def api_responsible_details():
                     elif time_value == 'age_72h' and ticket.age_hours > 72:
                         tickets.append(ticket)
         else:
-            # Period-based filtering (for day/week/month statistics)
-            if period == 'day':
+            # Period-based filtering (for total/day/week/month statistics)
+            if period == 'total':
+                tickets = closed_tickets_query.order_by(OtrsTicket.closed_date.desc()).limit(200).all()
+            elif period == 'day':
                 # Filter by specific date
                 try:
                     target_date = datetime.strptime(time_value, '%Y-%m-%d').date()
                     start_datetime = datetime.combine(target_date, datetime.min.time())
                     end_datetime = start_datetime + timedelta(days=1)
                     
-                    tickets = base_query.filter(
-                        OtrsTicket.created_date >= start_datetime,
-                        OtrsTicket.created_date < end_datetime
-                    ).all()
+                    tickets = closed_tickets_query.filter(
+                        OtrsTicket.closed_date >= start_datetime,
+                        OtrsTicket.closed_date < end_datetime
+                    ).order_by(OtrsTicket.closed_date.desc()).all()
                 except ValueError:
                     return jsonify({'error': 'Invalid date format'}), 400
                     
@@ -392,10 +475,10 @@ def api_responsible_details():
                     week_start = week_start - timedelta(days=week_start.weekday())  # Monday
                     week_end = week_start + timedelta(days=7)
                     
-                    tickets = base_query.filter(
-                        OtrsTicket.created_date >= week_start,
-                        OtrsTicket.created_date < week_end
-                    ).all()
+                    tickets = closed_tickets_query.filter(
+                        OtrsTicket.closed_date >= week_start,
+                        OtrsTicket.closed_date < week_end
+                    ).order_by(OtrsTicket.closed_date.desc()).all()
                 except (ValueError, IndexError):
                     return jsonify({'error': 'Invalid week format'}), 400
                     
@@ -413,10 +496,10 @@ def api_responsible_details():
                     else:
                         month_end = datetime(year, month + 1, 1)
                     
-                    tickets = base_query.filter(
-                        OtrsTicket.created_date >= month_start,
-                        OtrsTicket.created_date < month_end
-                    ).all()
+                    tickets = closed_tickets_query.filter(
+                        OtrsTicket.closed_date >= month_start,
+                        OtrsTicket.closed_date < month_end
+                    ).order_by(OtrsTicket.closed_date.desc()).all()
                 except (ValueError, IndexError):
                     return jsonify({'error': 'Invalid month format'}), 400
             else:
@@ -566,6 +649,49 @@ def api_export_responsible_txt():
             mimetype='text/plain'
         )
         
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/status')
+def api_update_status():
+    """Get current application update status"""
+    try:
+        status = update_service.get_status()
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/ack', methods=['POST'])
+def api_update_acknowledge():
+    """Mark update notification as acknowledged"""
+    try:
+        status = update_service.acknowledge_notification()
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/trigger', methods=['POST'])
+@require_daily_stats_password
+def api_trigger_update():
+    """Trigger auto-update execution"""
+    try:
+        data = request.get_json(silent=True) or {}
+        target_version = data.get('target_version')
+        result = update_service.trigger_update(target_version)
+        return jsonify({
+            'success': True,
+            'result': result
+        })
+    except RuntimeError as e:
+        message = str(e)
+        status_code = 409 if 'in progress' in message.lower() else 400
+        return jsonify({'error': message}), status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -866,6 +992,6 @@ if __name__ == '__main__':
     # Run application
     app.run(
         debug=app.config.get('DEBUG', False),
-        host='0.0.0.0',
-        port=5000
+        host=app.config.get('APP_HOST', '0.0.0.0'),
+        port=app.config.get('APP_PORT', 5001)
     )

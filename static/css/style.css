@@ -1339,14 +1339,6 @@ a.nav-link:focus {
     }
 }
 
-/* Database Management Styles */
-.database-management {
-    margin-top: 30px;
-    padding-top: 20px;
-    border-top: 1px solid #e9ecef;
-    text-align: center;
-}
-
 .btn-danger {
     background: #dc3545;
     color: white;
@@ -1559,6 +1551,15 @@ a.nav-link:focus {
 .filename-cell {
     font-weight: 600;
     color: #2c3e50;
+}
+
+.filename-cell .filename-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.filename-cell .filename-link:hover {
+    text-decoration: underline;
 }
 
 .filename-cell i {

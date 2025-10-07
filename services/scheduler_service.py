@@ -12,9 +12,10 @@ from .backup_service import BackupService
 class SchedulerService:
     """Service for scheduler operations"""
     
-    def __init__(self):
+    def __init__(self, analysis_service=None, update_service=None):
         self.scheduler = None
-        self.analysis_service = AnalysisService()
+        self.analysis_service = analysis_service or AnalysisService()
+        self.update_service = update_service
         self.backup_service = None
         self.app = None
     
@@ -32,6 +33,9 @@ class SchedulerService:
             
             # Schedule daily database backup
             self._schedule_daily_backup()
+
+            # Schedule GitHub update checks
+            self._schedule_update_checks()
             
             # Start scheduler
             self.scheduler.start()
@@ -94,6 +98,46 @@ class SchedulerService:
                 
         except Exception as e:
             print(f"✗ Error in scheduled age distribution calculation: {str(e)}")
+
+    def _schedule_update_checks(self):
+        """Schedule periodic update checks with APScheduler"""
+        if not self.update_service or not self.app:
+            return
+
+        if not self.app.config.get('APP_UPDATE_ENABLED', True):
+            return
+
+        interval = int(self.app.config.get('APP_UPDATE_POLL_INTERVAL', 3600))
+        interval = max(interval, 300)
+
+        try:
+            try:
+                self.scheduler.remove_job('update_check_job')
+            except Exception:
+                pass
+
+            self.scheduler.add_job(
+                func=self._run_update_check_job,
+                trigger='interval',
+                seconds=interval,
+                id='update_check_job',
+                name='Poll GitHub for application updates',
+                replace_existing=True
+            )
+            print(f"✓ Update check job scheduled every {interval} seconds")
+        except Exception as e:
+            print(f"✗ Error scheduling update checks: {str(e)}")
+
+    def _run_update_check_job(self):
+        """Execute update check inside application context"""
+        if not self.update_service or not self.app:
+            return
+
+        try:
+            with self.app.app_context():
+                self.update_service.check_for_updates()
+        except Exception as e:
+            print(f"✗ Error during update check: {str(e)}")
     
     def _get_schedule_time(self):
         """Get schedule time from database configuration"""

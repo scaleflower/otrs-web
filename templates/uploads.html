@@ -52,7 +52,9 @@
                             <tr>
                                 <td class="filename-cell">
                                     <i class="fas fa-file-excel"></i>
-                                    {{ session.filename }}
+                                    <a href="{{ url_for('download_upload', upload_id=session.id) }}" class="filename-link">
+                                        {{ session.filename }}
+                                    </a>
                                 </td>
                                 <td class="time-cell">
                                     {{ session.upload_time.strftime('%Y-%m-%d %H:%M:%S') }}

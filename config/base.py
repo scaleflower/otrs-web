@@ -34,6 +34,10 @@ class BaseConfig:
     LOG_LEVEL = os.environ.get('LOG_LEVEL') or 'INFO'
     LOG_MAX_BYTES = 10 * 1024 * 1024  # 10MB
     LOG_BACKUP_COUNT = 5
+
+    # Server settings
+    APP_HOST = os.environ.get('APP_HOST', '0.0.0.0')
+    APP_PORT = int(os.environ.get('APP_PORT', os.environ.get('PORT', '5001')))
     
     # Cache settings
     CACHE_TYPE = "simple"
@@ -54,10 +58,18 @@ class BaseConfig:
     
     # Daily Statistics Password Protection
     DAILY_STATS_PASSWORD = os.environ.get('DAILY_STATS_PASSWORD') or 'Enabling@2025'
-    
+
     # Session settings for password protection
     PERMANENT_SESSION_LIFETIME = timedelta(hours=2)  # 密码认证有效期2小时
-    
+
+    # Auto update settings
+    APP_UPDATE_ENABLED = os.environ.get('APP_UPDATE_ENABLED', 'true').lower() == 'true'
+    APP_UPDATE_REPO = os.environ.get('APP_UPDATE_REPO', 'Jacky/otrs-web')
+    APP_UPDATE_BRANCH = os.environ.get('APP_UPDATE_BRANCH', 'main')
+    APP_UPDATE_POLL_INTERVAL = int(os.environ.get('APP_UPDATE_POLL_INTERVAL', '3600'))  # seconds
+    APP_UPDATE_SCRIPT = os.environ.get('APP_UPDATE_SCRIPT', 'scripts/update_app.py')
+    APP_UPDATE_GITHUB_TOKEN = os.environ.get('APP_UPDATE_GITHUB_TOKEN')
+
     @staticmethod
     def init_app(app):
         """Initialize application with this configuration"""
