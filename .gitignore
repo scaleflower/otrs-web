@@ -66,9 +66,6 @@ db/
 database_backups/
 *.backup
 
-# Instance data
-instance/
-
 # Test data
 test_data/
 

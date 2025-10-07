@@ -1907,3 +1907,140 @@ a.nav-link:focus {
 .visible {
     display: block !important;
 }
+
+/* Manual Update Check Styles */
+.update-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-outline-primary {
+    background: transparent;
+    color: white;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+}
+
+.btn-outline-primary:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.8);
+    transform: translateY(-1px);
+}
+
+.btn-outline-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.btn-outline-primary i {
+    font-size: 0.9rem;
+}
+
+/* Update Notifications */
+.update-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    min-width: 300px;
+    max-width: 400px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    border-left: 4px solid #667eea;
+    transform: translateX(400px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.update-notification.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.update-notification-content {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.update-notification i {
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.update-notification-success {
+    border-left-color: #28a745;
+}
+
+.update-notification-success i {
+    color: #28a745;
+}
+
+.update-notification-error {
+    border-left-color: #dc3545;
+}
+
+.update-notification-error i {
+    color: #dc3545;
+}
+
+.update-notification-info {
+    border-left-color: #17a2b8;
+}
+
+.update-notification-info i {
+    color: #17a2b8;
+}
+
+.update-notification-warning {
+    border-left-color: #ffc107;
+}
+
+.update-notification-warning i {
+    color: #ffc107;
+}
+
+/* Responsive update controls */
+@media (max-width: 768px) {
+    .update-controls {
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+    }
+    
+    .update-notification {
+        min-width: calc(100vw - 40px);
+        max-width: calc(100vw - 40px);
+        right: 20px;
+        left: 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .latest-upload-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .update-controls {
+        align-items: flex-start;
+    }
+    
+    .btn-outline-primary {
+        width: 100%;
+        justify-content: center;
+    }
+}

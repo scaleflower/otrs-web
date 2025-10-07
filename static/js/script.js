@@ -1023,3 +1023,139 @@ function describeUpdateStatus(status) {
             return '';
     }
 }
+
+// ---------------------------------------------------------------------------
+// Manual update check functionality
+// ---------------------------------------------------------------------------
+
+// Initialize manual update check button
+function initializeManualUpdateCheck() {
+    const checkUpdateButton = document.getElementById('checkUpdateButton');
+    if (checkUpdateButton) {
+        checkUpdateButton.addEventListener('click', handleManualUpdateCheck);
+    }
+}
+
+// Handle manual update check
+async function handleManualUpdateCheck() {
+    const checkUpdateButton = document.getElementById('checkUpdateButton');
+    if (!checkUpdateButton) return;
+
+    // Show loading state
+    const originalText = checkUpdateButton.innerHTML;
+    checkUpdateButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 检查中...';
+    checkUpdateButton.disabled = true;
+
+    try {
+        const response = await fetch('/api/update/check', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            let errorMessage = data.error || '检查更新失败';
+            
+            // 特殊处理速率限制错误
+            if (errorMessage.includes('rate limit exceeded')) {
+                errorMessage = 'GitHub API 速率限制，请稍后再试或配置GitHub Token';
+            } else if (errorMessage.includes('GitHub Token未配置')) {
+                errorMessage = 'GitHub Token未配置，请联系管理员设置APP_UPDATE_GITHUB_TOKEN';
+            } else if (errorMessage.includes('Failed to contact GitHub')) {
+                errorMessage = '无法连接到GitHub，请检查网络连接';
+            }
+            
+            throw new Error(errorMessage);
+        }
+
+        // Update the status data
+        updateStatusData = {
+            ...updateStatusData,
+            ...data,
+            status: data.status,
+            latest_version: data.latest_version,
+            current_version: data.current_version,
+            release_notes: data.release_notes,
+            release_url: data.release_url,
+            published_at: data.published_at
+        };
+
+        // Apply the new state
+        applyUpdateIndicatorState(updateStatusData);
+
+        // Show appropriate message based on result
+        if (data.status === 'update_available') {
+            showUpdateNotification('发现新版本！', 'success');
+            // Auto-open update modal if new version is available
+            setTimeout(() => openUpdateModal(true), 1000);
+        } else if (data.status === 'up_to_date') {
+            showUpdateNotification('您使用的是最新版本！', 'info');
+        } else {
+            showUpdateNotification(data.message || '检查完成', 'info');
+        }
+
+    } catch (error) {
+        console.error('Error checking for updates:', error);
+        showUpdateNotification(error.message, 'error');
+    } finally {
+        // Restore button state
+        checkUpdateButton.innerHTML = originalText;
+        checkUpdateButton.disabled = false;
+    }
+}
+
+// Show update notification
+function showUpdateNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `update-notification update-notification-${type}`;
+    notification.innerHTML = `
+        <div class="update-notification-content">
+            <i class="fas fa-${getNotificationIcon(type)}"></i>
+            <span>${message}</span>
+        </div>
+    `;
+
+    // Add to page
+    document.body.appendChild(notification);
+
+    // Show with animation
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 10);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 5000);
+}
+
+// Get appropriate icon for notification type
+function getNotificationIcon(type) {
+    switch (type) {
+        case 'success':
+            return 'check-circle';
+        case 'error':
+            return 'exclamation-triangle';
+        case 'warning':
+            return 'exclamation-circle';
+        default:
+            return 'info-circle';
+    }
+}
+
+// Initialize manual update check when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    initializeEventListeners();
+    loadLatestUploadInfo();
+    initializeUpdateNotifications();
+    initializeManualUpdateCheck(); // Add this line
+});
