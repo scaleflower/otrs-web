@@ -141,6 +141,7 @@
   - `APP_UPDATE_BRANCH` 作为无标签时的备用分支，默认 `main`。
   - `APP_UPDATE_POLL_INTERVAL` 控制后台轮询 GitHub 发布的周期（秒）。
   - `APP_UPDATE_GITHUB_TOKEN` 可选的 GitHub Token，用于提高速率或访问私有仓库。
+  - `APP_UPDATE_RESTART_DELAY` 更新成功后等待多少秒再自动重启应用（默认 `5` 秒）。
 - 服务器上提供 `scripts/update_app.py` 脚本：
   - 自动执行 `git fetch`、切换标签/分支、安装依赖并运行升级脚本。
   - 支持 `--skip-deps`、`--pip-extra-args` 等参数，便于自定义部署流程。
@@ -148,8 +149,9 @@
 - 管理端调用顺序：
   1. 前端轮询 `GET /api/update/status` 获取最新发布信息；
   2. 弹窗提醒后通过 `POST /api/update/ack` 标记已读；
-  3. 当用户确认升级时调用 `POST /api/update/trigger`（需管理员密码）启动脚本；
-  4. 调用 `GET /api/update/status` 可查看更新进度与结果，失败时会返回错误原因。
+  3. 首页版本信息区域会出现更新图标，点击后可查看说明并触发 `POST /api/update/trigger`；
+  4. 更新成功后程序会在短暂倒计时后自动重启并加载最新代码。
+  5. 调用 `GET /api/update/status` 可查看更新进度与结果，失败时会返回错误原因。
 
 ## 快速开始
 

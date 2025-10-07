@@ -69,6 +69,7 @@ class BaseConfig:
     APP_UPDATE_POLL_INTERVAL = int(os.environ.get('APP_UPDATE_POLL_INTERVAL', '3600'))  # seconds
     APP_UPDATE_SCRIPT = os.environ.get('APP_UPDATE_SCRIPT', 'scripts/update_app.py')
     APP_UPDATE_GITHUB_TOKEN = os.environ.get('APP_UPDATE_GITHUB_TOKEN')
+    APP_UPDATE_RESTART_DELAY = int(os.environ.get('APP_UPDATE_RESTART_DELAY', '5'))
 
     @staticmethod
     def init_app(app):

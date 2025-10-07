@@ -22,6 +22,7 @@ class UpdateService:
         self.app = None
         self._update_thread = None
         self._lock = threading.Lock()
+        self._restart_timer = None
 
     # ------------------------------------------------------------------
     # Initialization helpers
@@ -47,6 +48,7 @@ class UpdateService:
             payload['repo'] = self._config('APP_UPDATE_REPO')
             payload['poll_interval'] = self._config('APP_UPDATE_POLL_INTERVAL', 3600)
             payload['is_updating'] = self.is_update_running()
+            payload['restart_scheduled'] = bool(self._restart_timer and self._restart_timer.is_alive())
             return payload
 
     def acknowledge_notification(self):
@@ -73,6 +75,11 @@ class UpdateService:
             if token:
                 headers['Authorization'] = f'Bearer {token}'
 
+            status = AppUpdateStatus.query.first()
+            if not status:
+                status = AppUpdateStatus(current_version=self._config('APP_VERSION', '0.0.0'))
+                db.session.add(status)
+
             url = f'https://api.github.com/repos/{repo}/releases/latest'
             try:
                 response = requests.get(url, headers=headers, timeout=10)
@@ -80,27 +87,29 @@ class UpdateService:
                 self._record_error(f'Failed to contact GitHub: {err}')
                 return None
 
-            if response.status_code != 200:
+            if response.status_code == 404:
+                status.latest_version = status.current_version
+                status.status = 'up_to_date'
+                status.last_checked_at = datetime.utcnow()
+                status.last_error = None
+                db.session.commit()
+                return status.to_dict()
+            elif response.status_code == 200:
+                try:
+                    payload = response.json()
+                except json.JSONDecodeError as err:
+                    self._record_error(f'GitHub response parse error: {err}')
+                    return None
+            else:
                 self._record_error(
                     f'GitHub API error {response.status_code}: {response.text[:200]}'
                 )
-                return None
-
-            try:
-                payload = response.json()
-            except json.JSONDecodeError as err:
-                self._record_error(f'GitHub response parse error: {err}')
                 return None
 
             latest_version = payload.get('tag_name') or payload.get('name')
             if not latest_version:
                 self._record_error('Missing tag_name in GitHub release payload')
                 return None
-
-            status = AppUpdateStatus.query.first()
-            if not status:
-                status = AppUpdateStatus(current_version=self._config('APP_VERSION', '0.0.0'))
-                db.session.add(status)
 
             status.latest_version = latest_version
             status.release_name = payload.get('name')
@@ -203,14 +212,14 @@ class UpdateService:
                 self._finalize_failure(status, error_message)
                 return
 
-            # Assume success, update current version and status
+            # Assume success, update current version and prepare restart
             status.current_version = target_version
-            status.status = 'up_to_date'
+            status.status = 'restarting'
             status.last_update_completed_at = datetime.utcnow()
             db.session.commit()
 
-            # Run follow-up check to refresh latest release information
-            self.check_for_updates(force=True)
+            delay = max(1, int(self._config('APP_UPDATE_RESTART_DELAY', 5) or 5))
+            self._schedule_restart(delay)
 
     def _finalize_failure(self, status, message):
         status.status = 'update_failed'
