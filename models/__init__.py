@@ -13,6 +13,7 @@ from .ticket import OtrsTicket, UploadDetail
 from .statistics import Statistic, DailyStatistics, StatisticsConfig, StatisticsLog
 from .user import ResponsibleConfig, DatabaseLog
 from .update import AppUpdateStatus
+from .update_log import UpdateLog, UpdateStepLog, init_update_log_models
 
 # Export all models for easy import
 __all__ = [
@@ -25,7 +26,10 @@ __all__ = [
     'StatisticsLog',
     'ResponsibleConfig',
     'DatabaseLog',
-    'AppUpdateStatus'
+    'AppUpdateStatus',
+    'UpdateLog',
+    'UpdateStepLog',
+    'init_update_log_models'
 ]
 
 def _ensure_upload_detail_schema():
@@ -48,6 +52,9 @@ def init_db(app):
     with app.app_context():
         # Create all tables
         db.create_all()
+
+        # Initialize update log models
+        init_update_log_models(app)
 
         # Ensure schema updates for upload_detail table
         _ensure_upload_detail_schema()

@@ -8,14 +8,16 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, List
 
 import requests
 from flask import current_app
 
 from models import db, AppUpdateStatus
+from models.update_log import UpdateLog, UpdateStepLog, UpdateLogStatus, UpdateLogStep, init_update_log_models
 
 
 class UpdateService:
@@ -166,7 +168,7 @@ class UpdateService:
                     'message': 'You are using the latest version'
                 }
 
-    def trigger_update(self, target_version: Optional[str] = None):
+    def trigger_update(self, target_version: Optional[str] = None, force_reinstall: bool = False):
         """Kick off background update execution"""
         if not self._config('APP_UPDATE_ENABLED', True):
             raise RuntimeError('Auto-update disabled')
@@ -183,15 +185,34 @@ class UpdateService:
             if not target:
                 raise RuntimeError('No target version supplied')
 
+            # 获取当前版本
+            current_version = status.current_version or '0.0.0'
+
+            # 检查是否强制重新安装当前版本
+            if force_reinstall:
+                print(f"🔄 Forced reinstall of current version: {target}")
+            else:
+                # 正常更新检查：如果目标版本与当前版本相同，不允许更新
+                if target == current_version and not force_reinstall:
+                    raise RuntimeError(f'Already using version {target}. Use force_reinstall=True to reinstall.')
+
+            # 创建更新日志记录
+            update_log = self._create_update_log(target, current_version, force_reinstall)
+            
             status.status = 'updating'
             status.last_update_started_at = datetime.utcnow()
             status.last_error = None
             db.session.commit()
 
-            thread = threading.Thread(target=self._run_update_job, args=(target,), daemon=True)
+            thread = threading.Thread(target=self._run_update_job_with_logging, args=(target, force_reinstall, update_log.update_id), daemon=True)
             thread.start()
             self._update_thread = thread
-            return {'message': 'Update started', 'target_version': target}
+            return {
+                'message': 'Update started', 
+                'target_version': target, 
+                'force_reinstall': force_reinstall,
+                'update_id': update_log.update_id
+            }
 
     def is_update_running(self) -> bool:
         thread = self._update_thread
@@ -200,7 +221,7 @@ class UpdateService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _run_update_job(self, target_version):
+    def _run_update_job(self, target_version, force_reinstall=False):
         with self._ensure_app_context():
             status = AppUpdateStatus.query.first()
             repo = self._config('APP_UPDATE_REPO')
@@ -229,6 +250,10 @@ class UpdateService:
                 f'--branch={branch}',
                 f'--target={target_version}'
             ]
+
+            # 添加强制重新安装参数
+            if force_reinstall:
+                command.append('--force-reinstall')
 
             try:
                 result = subprocess.run(
@@ -379,7 +404,8 @@ class UpdateService:
             return False  # 版本相同
         except:
             # 如果解析失败，回退到字符串比较
-            return latest != current
+            # 对于复杂版本格式，如果清理后的版本不同，应该允许更新
+            return latest_clean != current_clean
 
     def _schedule_restart(self, delay_seconds):
         """Schedule application restart after successful update"""
@@ -438,6 +464,221 @@ class UpdateService:
         self._restart_timer = threading.Thread(target=restart_application, daemon=True)
         self._restart_timer.start()
         print(f"✅ Restart scheduled in {delay_seconds} seconds")
+
+    def _create_update_log(self, target_version: str, current_version: str, force_reinstall: bool) -> UpdateLog:
+        """Create a new update log record"""
+        update_id = str(uuid.uuid4())
+        
+        update_log = UpdateLog(
+            update_id=update_id,
+            target_version=target_version,
+            current_version=current_version,
+            force_reinstall=force_reinstall,
+            system_platform=sys.platform,
+            python_version=sys.version.split()[0]
+        )
+        
+        # Define update steps
+        update_steps = [
+            (UpdateLogStep.BACKUP_DATABASE.value, "备份数据库", 1),
+            (UpdateLogStep.FETCH_REPOSITORY.value, "获取仓库更新", 2),
+            (UpdateLogStep.CHECKOUT_VERSION.value, "检出目标版本", 3),
+            (UpdateLogStep.PULL_CHANGES.value, "拉取代码变更", 4),
+            (UpdateLogStep.INSTALL_DEPENDENCIES.value, "安装依赖包", 5),
+            (UpdateLogStep.RUN_MIGRATIONS.value, "执行数据库迁移", 6),
+            (UpdateLogStep.RESTART_APPLICATION.value, "重启应用程序", 7)
+        ]
+        
+        update_log.total_steps = len(update_steps)
+        
+        db.session.add(update_log)
+        db.session.commit()
+        
+        # Create step records
+        for step_name, step_description, step_order in update_steps:
+            step_log = UpdateStepLog(
+                update_log_id=update_log.id,
+                step_name=step_name,
+                step_order=step_order
+            )
+            db.session.add(step_log)
+        
+        db.session.commit()
+        return update_log
+
+    def _run_update_job_with_logging(self, target_version: str, force_reinstall: bool, update_id: str):
+        """Run update job with detailed logging"""
+        with self._ensure_app_context():
+            try:
+                # Get update log
+                update_log = UpdateLog.query.filter_by(update_id=update_id).first()
+                if not update_log:
+                    print(f"❌ Update log not found for update_id: {update_id}")
+                    return
+                
+                # Update system information
+                update_log.system_platform = sys.platform
+                update_log.python_version = sys.version.split()[0]
+                db.session.commit()
+                
+                # Execute update with logging
+                self._execute_update_with_logging(target_version, force_reinstall, update_log)
+                
+            except Exception as e:
+                print(f"❌ Update job failed: {e}")
+                try:
+                    update_log = UpdateLog.query.filter_by(update_id=update_id).first()
+                    if update_log:
+                        update_log.mark_failed(f"Update job execution failed: {str(e)}")
+                        db.session.commit()
+                except:
+                    pass
+
+    def _execute_update_with_logging(self, target_version: str, force_reinstall: bool, update_log: UpdateLog):
+        """Execute update with detailed step logging"""
+        repo = self._config('APP_UPDATE_REPO')
+        branch = self._config('APP_UPDATE_BRANCH')
+        script_path = Path(self._config('APP_UPDATE_SCRIPT', 'scripts/update_app.py'))
+        
+        # Fix path calculation
+        if not script_path.is_absolute():
+            base_dir = Path.cwd()
+            script_path = (base_dir / script_path).resolve()
+
+        env = os.environ.copy()
+        token = self._config('APP_UPDATE_GITHUB_TOKEN')
+        if token:
+            env['GITHUB_TOKEN'] = token
+
+        if not script_path.exists():
+            self._finalize_failure_with_logging(update_log, f'Update script not found: {script_path}')
+            return
+
+        command = [
+            sys.executable,
+            str(script_path),
+            f'--repo={repo}',
+            f'--branch={branch}',
+            f'--target={target_version}'
+        ]
+
+        if force_reinstall:
+            command.append('--force-reinstall')
+
+        try:
+            # Update step: backup_database
+            self._update_step_status(update_log, UpdateLogStep.BACKUP_DATABASE.value, "开始备份数据库...")
+            
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=Path.cwd(),
+                check=False,
+            )
+            
+            # Process result
+            if result.returncode != 0:
+                error_message = (
+                    f'Update script failed with code {result.returncode}.\n'
+                    f'STDOUT: {result.stdout}\nSTDERR: {result.stderr}'
+                )
+                self._finalize_failure_with_logging(update_log, error_message)
+                return
+
+            # Update successful
+            self._finalize_success_with_logging(update_log, target_version)
+            
+        except Exception as err:
+            self._finalize_failure_with_logging(update_log, f'Update execution error: {err}')
+
+    def _update_step_status(self, update_log: UpdateLog, step_name: str, output: str = None):
+        """Update step status in the log"""
+        step_log = UpdateStepLog.query.filter_by(
+            update_log_id=update_log.id, 
+            step_name=step_name
+        ).first()
+        
+        if step_log:
+            step_log.mark_completed(output)
+            update_log.completed_steps += 1
+            db.session.commit()
+            print(f"✅ Step completed: {step_name}")
+
+    def _finalize_success_with_logging(self, update_log: UpdateLog, target_version: str):
+        """Finalize successful update with logging"""
+        # Update AppUpdateStatus
+        status = AppUpdateStatus.query.first()
+        if status:
+            status.current_version = target_version
+            status.status = 'restarting'
+            status.last_update_completed_at = datetime.utcnow()
+        
+        # Update log
+        update_log.mark_completed()
+        
+        # Try to get commit information
+        try:
+            self._capture_commit_info(update_log)
+        except Exception as e:
+            print(f"⚠️ Failed to capture commit info: {e}")
+        
+        db.session.commit()
+        
+        delay = max(1, int(self._config('APP_UPDATE_RESTART_DELAY', 5) or 5))
+        self._schedule_restart(delay)
+
+    def _finalize_failure_with_logging(self, update_log: UpdateLog, message: str):
+        """Finalize failed update with logging"""
+        # Update AppUpdateStatus
+        status = AppUpdateStatus.query.first()
+        if status:
+            status.status = 'update_failed'
+            status.last_error = message[:2000]
+            status.last_update_completed_at = datetime.utcnow()
+        
+        # Update log
+        update_log.mark_failed(message)
+        
+        db.session.commit()
+
+    def _capture_commit_info(self, update_log: UpdateLog):
+        """Capture current commit information"""
+        try:
+            result = subprocess.run(
+                ['git', 'log', '-1', '--pretty=format:%H|%s|%an|%ai'],
+                capture_output=True,
+                text=True,
+                cwd=Path.cwd(),
+                check=True
+            )
+            
+            if result.stdout:
+                commit_hash, message, author, date_str = result.stdout.split('|', 3)
+                commit_date = datetime.fromisoformat(date_str.replace(' ', 'T'))
+                
+                update_log.set_commit_info(commit_hash, message, author, commit_date)
+                
+        except Exception as e:
+            print(f"⚠️ Failed to capture commit info: {e}")
+
+    def get_update_logs(self, limit: int = 50) -> List[Dict]:
+        """Get recent update logs"""
+        with self._ensure_app_context():
+            logs = UpdateLog.query.order_by(UpdateLog.started_at.desc()).limit(limit).all()
+            return [log.to_dict() for log in logs]
+
+    def get_update_log_details(self, update_id: str) -> Optional[Dict]:
+        """Get detailed update log with steps"""
+        with self._ensure_app_context():
+            log = UpdateLog.query.filter_by(update_id=update_id).first()
+            if not log:
+                return None
+            
+            log_data = log.to_dict()
+            log_data['steps'] = [step.to_dict() for step in log.steps]
+            return log_data
 
     def _config(self, key, default=None):
         if self.app:

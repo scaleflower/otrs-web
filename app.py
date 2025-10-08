@@ -697,7 +697,8 @@ def api_trigger_update():
     try:
         data = request.get_json(silent=True) or {}
         target_version = data.get('target_version')
-        result = update_service.trigger_update(target_version)
+        force_reinstall = data.get('force_reinstall', False)
+        result = update_service.trigger_update(target_version, force_reinstall)
         return jsonify({
             'success': True,
             'result': result
@@ -708,6 +709,62 @@ def api_trigger_update():
         return jsonify({'error': message}), status_code
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/reinstall', methods=['POST'])
+@require_daily_stats_password
+def api_reinstall_current_version():
+    """Force reinstall current version"""
+    try:
+        data = request.get_json(silent=True) or {}
+        target_version = data.get('target_version')
+        result = update_service.trigger_update(target_version, force_reinstall=True)
+        return jsonify({
+            'success': True,
+            'result': result,
+            'message': '强制重新安装当前版本已启动'
+        })
+    except RuntimeError as e:
+        message = str(e)
+        status_code = 409 if 'in progress' in message.lower() else 400
+        return jsonify({'error': message}), status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/logs')
+@require_daily_stats_password
+def api_get_update_logs():
+    """Get update logs"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        logs = update_service.get_update_logs(limit)
+        return jsonify({
+            'success': True,
+            'logs': logs
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update/logs/<update_id>')
+@require_daily_stats_password
+def api_get_update_log_details(update_id):
+    """Get detailed update log"""
+    try:
+        log_details = update_service.get_update_log_details(update_id)
+        if not log_details:
+            return jsonify({'error': 'Update log not found'}), 404
+        
+        return jsonify({
+            'success': True,
+            'log': log_details
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/update-logs')
+@require_daily_stats_password
+def update_logs_page():
+    """Update logs page"""
+    return render_template('update_logs.html', APP_VERSION=APP_VERSION)
 
 @app.route('/api/export-execution-logs', methods=['GET'])
 def api_export_execution_logs():

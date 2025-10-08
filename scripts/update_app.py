@@ -58,6 +58,7 @@ def parse_args():
     parser.add_argument('--working-dir', default=None, help='Project root directory (defaults to script parent)')
     parser.add_argument('--skip-deps', action='store_true', help='Skip dependency installation step')
     parser.add_argument('--pip-extra-args', default='', help='Extra args passed to pip install')
+    parser.add_argument('--force-reinstall', action='store_true', help='Force reinstall even if version is the same')
     return parser.parse_args()
 
 
@@ -78,6 +79,21 @@ def main():
     git_dir = project_root / '.git'
     if not git_dir.exists():
         raise SystemExit('This script must be executed inside a git repository')
+
+    # 检查当前版本和目标版本
+    if args.target:
+        # 获取当前版本
+        current_version_result = subprocess.run(
+            ['git', 'describe', '--tags', '--abbrev=0'], 
+            cwd=project_root, 
+            text=True, 
+            capture_output=True
+        )
+        current_version = current_version_result.stdout.strip() if current_version_result.returncode == 0 else None
+        
+        if current_version and args.target == current_version and not args.force_reinstall:
+            print(f"ℹ️  Already on version {current_version}. Use --force-reinstall to reinstall.")
+            return 0
 
     # 0. Create database backup before starting update
     print("🛡️  Creating database backup...")

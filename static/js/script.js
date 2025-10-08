@@ -31,6 +31,7 @@ const updateModalCurrentVersion = document.getElementById('updateModalCurrentVer
 const updateModalLatestVersion = document.getElementById('updateModalLatestVersion');
 const updateModalPublished = document.getElementById('updateModalPublished');
 const updateModalRemindBtn = document.getElementById('updateModalRemindBtn');
+const updateModalForceReinstallBtn = document.getElementById('updateModalForceReinstallBtn');
 
 let updateStatusData = null;
 let updateStatusTimer = null;
@@ -692,6 +693,9 @@ function initializeUpdateNotifications() {
     if (updateModalConfirmBtn) {
         updateModalConfirmBtn.addEventListener('click', triggerUpdateFromModal);
     }
+    if (updateModalForceReinstallBtn) {
+        updateModalForceReinstallBtn.addEventListener('click', triggerForceReinstallFromModal);
+    }
     if (updateModalClose) {
         updateModalClose.addEventListener('click', closeUpdateModal);
     }
@@ -865,7 +869,7 @@ function populateUpdateModal() {
     const requiresPassword = statusCode === 'update_available' || statusCode === 'update_failed';
     if (updateModalPassword) {
         updateModalPassword.value = '';
-        updateModalPassword.disabled = !requiresPassword;
+        updateModalPassword.disabled = false; // Always enable password input for authentication
     }
 
     if (updateModalConfirmBtn) {
@@ -1086,16 +1090,39 @@ async function handleManualUpdateCheck() {
         // Apply the new state
         applyUpdateIndicatorState(updateStatusData);
 
-        // Show appropriate message based on result
-        if (data.status === 'update_available') {
-            showUpdateNotification('发现新版本！', 'success');
-            // Auto-open update modal if new version is available
-            setTimeout(() => openUpdateModal(true), 1000);
-        } else if (data.status === 'up_to_date') {
-            showUpdateNotification('您使用的是最新版本！', 'info');
-        } else {
-            showUpdateNotification(data.message || '检查完成', 'info');
-        }
+        // Always open the update modal to show version information
+        setTimeout(() => {
+            openUpdateModal(true);
+            
+            // Show appropriate message in the modal
+            if (data.status === 'update_available') {
+                if (updateModalStatus) {
+                    updateModalStatus.textContent = `发现新版本 ${data.latest_version}！当前版本：${data.current_version}`;
+                }
+                // Enable update button
+                if (updateModalConfirmBtn) {
+                    updateModalConfirmBtn.style.display = 'inline-flex';
+                    updateModalConfirmBtn.disabled = false;
+                    updateModalConfirmBtn.innerHTML = '<i class="fas fa-play"></i> 更新到最新版本';
+                }
+            } else if (data.status === 'up_to_date') {
+                if (updateModalStatus) {
+                    updateModalStatus.textContent = `您使用的是最新版本 ${data.current_version}！`;
+                }
+                // Show force reinstall option
+                if (updateModalForceReinstallBtn) {
+                    updateModalForceReinstallBtn.style.display = 'inline-flex';
+                }
+                // Hide update button since we're up to date
+                if (updateModalConfirmBtn) {
+                    updateModalConfirmBtn.style.display = 'none';
+                }
+            } else {
+                if (updateModalStatus) {
+                    updateModalStatus.textContent = data.message || '检查完成';
+                }
+            }
+        }, 500);
 
     } catch (error) {
         console.error('Error checking for updates:', error);
@@ -1149,6 +1176,63 @@ function getNotificationIcon(type) {
             return 'exclamation-circle';
         default:
             return 'info-circle';
+    }
+}
+
+// Force reinstall functionality
+async function triggerForceReinstallFromModal() {
+    if (!updateStatusData || !updateModalForceReinstallBtn) return;
+
+    const password = updateModalPassword ? updateModalPassword.value.trim() : '';
+    if (!password) {
+        if (updateModalFeedback) {
+            updateModalFeedback.textContent = '请先输入管理员密码。';
+            updateModalFeedback.className = 'update-modal-feedback error';
+        }
+        if (updateModalPassword) updateModalPassword.focus();
+        return;
+    }
+
+    updateModalForceReinstallBtn.disabled = true;
+    updateModalForceReinstallBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 正在重新安装';
+    if (updateModalFeedback) {
+        updateModalFeedback.textContent = '';
+        updateModalFeedback.className = 'update-modal-feedback';
+    }
+
+    try {
+        const response = await fetch('/api/update/reinstall', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                target_version: updateStatusData.current_version,
+                auth_password: password
+            })
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.error || '强制重新安装启动失败');
+        }
+
+        if (updateModalFeedback) {
+            updateModalFeedback.textContent = '强制重新安装已开始，请稍候。';
+            updateModalFeedback.className = 'update-modal-feedback success';
+        }
+        closeUpdateModal();
+        fetchUpdateStatus();
+    } catch (error) {
+        if (updateModalFeedback) {
+            updateModalFeedback.textContent = error.message;
+            updateModalFeedback.className = 'update-modal-feedback error';
+        }
+        if (updateModalForceReinstallBtn) {
+            updateModalForceReinstallBtn.disabled = false;
+            updateModalForceReinstallBtn.innerHTML = '<i class="fas fa-redo"></i> 强制重新安装';
+        }
     }
 }
 
