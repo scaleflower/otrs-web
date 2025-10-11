@@ -24,7 +24,12 @@ from utils.update_package import (
     ReleasePackageManager,
     PackageExtractionError,
 )
-
+# 添加对阿里云云效的支持
+from utils.yunxiao_update_package import (
+    YunxiaoReleaseDownloadError,
+    YunxiaoReleasePackageManager,
+    YunxiaoPackageExtractionError,
+)
 
 class UpdateService:
     """Manage GitHub release polling and local update execution"""
@@ -60,6 +65,9 @@ class UpdateService:
             payload['poll_interval'] = self._config('APP_UPDATE_POLL_INTERVAL', 3600)
             payload['is_updating'] = self.is_update_running()
             payload['restart_scheduled'] = bool(self._restart_timer and self._restart_timer.is_alive())
+            # 添加云效相关配置
+            payload['update_source'] = self._config('APP_UPDATE_SOURCE', 'github')  # github or yunxiao
+            payload['update_use_ssh'] = self._config('APP_UPDATE_USE_SSH', False)   # 是否使用SSH方式
             return payload
 
     def acknowledge_notification(self):
@@ -72,10 +80,20 @@ class UpdateService:
             return status.to_dict() if status else None
 
     def check_for_updates(self):
-        """Manually check for updates from GitHub Releases"""
+        """Manually check for updates from GitHub Releases or Yunxiao"""
         if not self._config('APP_UPDATE_ENABLED', True):
             return {'success': False, 'error': 'Auto-update disabled'}
 
+        # 检查更新源
+        update_source = self._config('APP_UPDATE_SOURCE', 'github')
+        
+        if update_source == 'yunxiao':
+            return self._check_yunxiao_updates()
+        else:
+            return self._check_github_updates()
+
+    def _check_github_updates(self):
+        """检查GitHub更新"""
         with self._ensure_app_context():
             repo = self._config('APP_UPDATE_REPO')
             token = self._config('APP_UPDATE_GITHUB_TOKEN')
@@ -169,6 +187,83 @@ class UpdateService:
                     'release_notes': payload.get('body'),
                     'release_url': payload.get('html_url'),
                     'published_at': self._format_datetime(payload.get('published_at')),
+                    'message': f'New version {latest_version} is available!'
+                }
+            else:
+                status.status = 'up_to_date'
+                db.session.commit()
+                return {
+                    'success': True,
+                    'status': 'up_to_date',
+                    'current_version': current_version,
+                    'latest_version': latest_version,
+                    'message': 'You are using the latest version'
+                }
+
+    def _check_yunxiao_updates(self):
+        """检查阿里云云效更新"""
+        with self._ensure_app_context():
+            repo = self._config('APP_UPDATE_REPO')
+            token = self._config('APP_UPDATE_YUNXIAO_TOKEN')
+            use_ssh = self._config('APP_UPDATE_USE_SSH', False)
+            
+            # 如果使用SSH方式，不需要token
+            if not use_ssh:
+                if not token:
+                    print("⚠️  未配置云效访问Token，可能遇到API速率限制")
+            else:
+                print("🔐 使用SSH方式进行代码拉取")
+
+            status = AppUpdateStatus.query.first()
+            if not status:
+                status = AppUpdateStatus(current_version=self._config('APP_VERSION', '0.0.0'))
+                db.session.add(status)
+
+            # 创建云效包管理器实例
+            manager = YunxiaoReleasePackageManager(
+                repo=repo,
+                token=token,
+                project_root=Path(self.app.root_path),
+                download_root=Path(self.app.instance_path) / 'releases',
+                use_ssh=use_ssh  # 传递SSH使用标志
+            )
+
+            # 获取更新信息
+            try:
+                metadata = manager.fetch_release_metadata(None)
+            except YunxiaoReleaseDownloadError as err:
+                error_msg = f'Failed to contact Aliyun Yunxiao: {err}'
+                self._record_error(error_msg)
+                return {'success': False, 'error': error_msg}
+
+            latest_version = metadata.tag_name
+            if not latest_version:
+                error_msg = 'Missing tag_name in Yunxiao release payload'
+                self._record_error(error_msg)
+                return {'success': False, 'error': error_msg}
+
+            status.latest_version = latest_version
+            status.release_name = metadata.name
+            status.release_body = metadata.body
+            status.release_url = metadata.html_url
+            status.published_at = self._parse_datetime(metadata.published_at)
+            status.last_checked_at = datetime.utcnow()
+            status.last_error = None
+
+            current_version = status.current_version or '0.0.0'
+            # 使用语义化版本号比较
+            if self._compare_versions(current_version, latest_version):
+                status.status = 'update_available'
+                db.session.commit()
+                return {
+                    'success': True,
+                    'status': 'update_available',
+                    'current_version': current_version,
+                    'latest_version': latest_version,
+                    'release_name': metadata.name,
+                    'release_notes': metadata.body,
+                    'release_url': metadata.html_url,
+                    'published_at': self._format_datetime(metadata.published_at),
                     'message': f'New version {latest_version} is available!'
                 }
             else:

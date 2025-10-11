@@ -68,6 +68,12 @@ class BaseConfig:
     APP_UPDATE_BRANCH = os.environ.get('APP_UPDATE_BRANCH', 'main')
     APP_UPDATE_SCRIPT = os.environ.get('APP_UPDATE_SCRIPT', 'scripts/update_app.py')
     APP_UPDATE_GITHUB_TOKEN = os.environ.get('APP_UPDATE_GITHUB_TOKEN')
+    # 添加阿里云云效支持
+    APP_UPDATE_SOURCE = os.environ.get('APP_UPDATE_SOURCE', 'github')  # github or yunxiao
+    APP_UPDATE_YUNXIAO_TOKEN = os.environ.get('APP_UPDATE_YUNXIAO_TOKEN')
+    # 添加SSH方式支持
+    APP_UPDATE_USE_SSH = os.environ.get('APP_UPDATE_USE_SSH', 'false').lower() == 'true'
+    
     APP_UPDATE_RESTART_DELAY = int(os.environ.get('APP_UPDATE_RESTART_DELAY', '5'))
     APP_UPDATE_DOWNLOAD_DIR = os.environ.get('APP_UPDATE_DOWNLOAD_DIR')
     APP_UPDATE_PRESERVE_PATHS = os.environ.get(

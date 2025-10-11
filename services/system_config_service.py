@@ -1,16 +1,17 @@
 """
-System configuration service for OTRS Web Application
+Service for managing system configurations
 """
 
+from models import SystemConfig, db
+from datetime import datetime
+import json
 import os
-from models import SystemConfig
-from utils.encryption import encrypt_data, decrypt_data
+
 
 class SystemConfigService:
-    """Service for managing system configurations"""
+    """Service for handling system configuration operations"""
     
     def __init__(self, app=None):
-        """Initialize service with optional Flask app"""
         self.app = app
         if app:
             self.init_app(app)
@@ -29,11 +30,10 @@ class SystemConfigService:
         if db_value is not None:
             return db_value
         
-        # Check Flask app config
+        # Check environment variables
         if self.app and key in self.app.config:
             return self.app.config[key]
         
-        # Check environment variables
         env_value = self._get_env_value(key)
         if env_value is not None:
             return env_value
@@ -50,6 +50,9 @@ class SystemConfigService:
             'APP_HOST': 'APP_HOST',
             'DAILY_STATS_PASSWORD': 'DAILY_STATS_PASSWORD',
             'APP_UPDATE_GITHUB_TOKEN': 'APP_UPDATE_GITHUB_TOKEN',
+            'APP_UPDATE_YUNXIAO_TOKEN': 'APP_UPDATE_YUNXIAO_TOKEN',  # 添加云效Token支持
+            'APP_UPDATE_SOURCE': 'APP_UPDATE_SOURCE',  # 添加更新源配置
+            'APP_UPDATE_USE_SSH': 'APP_UPDATE_USE_SSH',  # 添加SSH方式配置
             'BACKUP_RETENTION_DAYS': 'BACKUP_RETENTION_DAYS',
             'BACKUP_TIME': 'BACKUP_TIME',
             'ADMIN_PASSWORD': 'ADMIN_PASSWORD'
@@ -65,19 +68,13 @@ class SystemConfigService:
             raise RuntimeError("SystemConfigService not initialized with Flask app")
             
         with self.app.app_context():
-            config = SystemConfig.query.filter_by(key=key).first()
-            if not config:
-                config = SystemConfig(key=key)
-                from models import db
-                db.session.add(config)
-            
-            config.value = value
-            config.description = description
-            config.category = category
-            config.is_encrypted = is_encrypted
-            
-            from models import db
-            db.session.commit()
+            return SystemConfig.set_config_value(
+                key=key,
+                value=value,
+                description=description,
+                category=category,
+                is_encrypted=is_encrypted
+            )
     
     def get_all_configs(self):
         """Get all configurations"""
@@ -86,9 +83,18 @@ class SystemConfigService:
             raise RuntimeError("SystemConfigService not initialized with Flask app")
             
         with self.app.app_context():
-            return SystemConfig.query.all()
+            return SystemConfig.get_all_configs()
     
-    def get_configs_dict(self):
+    def get_configs_by_category(self, category):
+        """Get configurations by category"""
+        # Ensure we're in an application context
+        if not self.app:
+            raise RuntimeError("SystemConfigService not initialized with Flask app")
+            
+        with self.app.app_context():
+            return SystemConfig.get_configs_by_category(category)
+    
+    def get_config_dict(self):
         """Get all configurations as dictionary"""
         configs = self.get_all_configs()
         return {config.key: config.value for config in configs}
@@ -163,4 +169,40 @@ class SystemConfigService:
                         description=config_data['description'],
                         category=config_data['category'],
                         is_encrypted=config_data.get('is_encrypted', False)
+                    )
+            
+            # Add new default configurations for Yunxiao support
+            yunxiao_configs = [
+                {
+                    'key': 'APP_UPDATE_SOURCE',
+                    'value': 'github',
+                    'description': '更新源，可选值：github, yunxiao',
+                    'category': 'update',
+                    'is_encrypted': False
+                },
+                {
+                    'key': 'APP_UPDATE_YUNXIAO_TOKEN',
+                    'value': '',
+                    'description': '阿里云云效访问Token',
+                    'category': 'update',
+                    'is_encrypted': True
+                },
+                {
+                    'key': 'APP_UPDATE_USE_SSH',
+                    'value': 'false',
+                    'description': '是否使用SSH方式从云效获取更新',
+                    'category': 'update',
+                    'is_encrypted': False
+                }
+            ]
+                        
+            for config_data in yunxiao_configs:
+                existing = SystemConfig.query.filter_by(key=config_data['key']).first()
+                if not existing:
+                    self.set_config_value(
+                        key=config_data['key'],
+                        value=config_data['value'],
+                        description=config_data['description'],
+                        category=config_data['category'],
+                        is_encrypted=config_data['is_encrypted']
                     )
