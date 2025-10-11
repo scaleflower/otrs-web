@@ -1,17 +1,16 @@
 """
-Service for managing system configurations
+System configuration service for OTRS Web Application
 """
 
-from models import SystemConfig, db
-from datetime import datetime
-import json
 import os
-
+from models import SystemConfig
+from utils.encryption import encrypt_data, decrypt_data
 
 class SystemConfigService:
-    """Service for handling system configuration operations"""
+    """Service for managing system configurations"""
     
     def __init__(self, app=None):
+        """Initialize service with optional Flask app"""
         self.app = app
         if app:
             self.init_app(app)
@@ -30,10 +29,11 @@ class SystemConfigService:
         if db_value is not None:
             return db_value
         
-        # Check environment variables
+        # Check Flask app config
         if self.app and key in self.app.config:
             return self.app.config[key]
         
+        # Check environment variables
         env_value = self._get_env_value(key)
         if env_value is not None:
             return env_value
@@ -65,13 +65,19 @@ class SystemConfigService:
             raise RuntimeError("SystemConfigService not initialized with Flask app")
             
         with self.app.app_context():
-            return SystemConfig.set_config_value(
-                key=key,
-                value=value,
-                description=description,
-                category=category,
-                is_encrypted=is_encrypted
-            )
+            config = SystemConfig.query.filter_by(key=key).first()
+            if not config:
+                config = SystemConfig(key=key)
+                from models import db
+                db.session.add(config)
+            
+            config.value = value
+            config.description = description
+            config.category = category
+            config.is_encrypted = is_encrypted
+            
+            from models import db
+            db.session.commit()
     
     def get_all_configs(self):
         """Get all configurations"""
@@ -80,18 +86,9 @@ class SystemConfigService:
             raise RuntimeError("SystemConfigService not initialized with Flask app")
             
         with self.app.app_context():
-            return SystemConfig.get_all_configs()
+            return SystemConfig.query.all()
     
-    def get_configs_by_category(self, category):
-        """Get configurations by category"""
-        # Ensure we're in an application context
-        if not self.app:
-            raise RuntimeError("SystemConfigService not initialized with Flask app")
-            
-        with self.app.app_context():
-            return SystemConfig.get_configs_by_category(category)
-    
-    def get_config_dict(self):
+    def get_configs_dict(self):
         """Get all configurations as dictionary"""
         configs = self.get_all_configs()
         return {config.key: config.value for config in configs}
