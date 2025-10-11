@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List
+from packaging import version
 
 import requests
 from flask import current_app
@@ -272,75 +273,82 @@ class UpdateService:
 
     @staticmethod
     def _compare_versions(current, latest):
-        """比较语义化版本号，支持多种版本格式"""
+        """比较语义化版本号，使用packaging库进行可靠比较"""
         if current == latest:
             return False  # 版本相同，不需要更新
         
-        # 清理版本号，提取数字版本部分
-        def clean_version(version):
-            if not version:
+        try:
+            # 使用packaging.version进行版本比较
+            current_ver = version.parse(current)
+            latest_ver = version.parse(latest)
+            return latest_ver > current_ver
+        except version.InvalidVersion:
+            # 如果无法解析为标准版本号，回退到原始比较逻辑
+            # 清理版本号，提取数字版本部分
+            def clean_version(version_str):
+                if not version_str:
+                    return "0.0.0"
+                
+                # 移除所有非数字和点号的前缀和后缀
+                # 支持格式: v1.2.3, release/v1.2.6, 1.2.3-beta, etc.
+                version_str = str(version_str).strip()
+                
+                # 查找版本号模式：数字.数字.数字
+                match = re.search(r'(\d+\.\d+\.\d+)', version_str)
+                if match:
+                    return match.group(1)
+                
+                # 如果没有找到完整的三段版本号，尝试查找两段或一段
+                match = re.search(r'(\d+\.\d+)', version_str)
+                if match:
+                    return match.group(1) + '.0'
+                
+                match = re.search(r'(\d+)', version_str)
+                if match:
+                    return match.group(1) + '.0.0'
+                
                 return "0.0.0"
             
-            # 移除所有非数字和点号的前缀和后缀
-            # 支持格式: v1.2.3, release/v1.2.6, 1.2.3-beta, etc.
-            version_str = str(version).strip()
+            current_clean = clean_version(current)
+            latest_clean = clean_version(latest)
             
-            # 查找版本号模式：数字.数字.数字
-            match = re.search(r'(\d+\.\d+\.\d+)', version_str)
-            if match:
-                return match.group(1)
+            # 如果清理后的版本相同，则不需要更新
+            if current_clean == latest_clean:
+                return False
             
-            # 如果没有找到完整的三段版本号，尝试查找两段或一段
-            match = re.search(r'(\d+\.\d+)', version_str)
-            if match:
-                return match.group(1) + '.0'
-            
-            match = re.search(r'(\d+)', version_str)
-            if match:
-                return match.group(1) + '.0.0'
-            
-            return "0.0.0"
-        
-        current_clean = clean_version(current)
-        latest_clean = clean_version(latest)
-        
-        # 如果清理后的版本相同，则不需要更新
-        if current_clean == latest_clean:
-            return False
-        
-        # 分割版本号为数字部分
-        def parse_version_parts(version_str):
-            parts = version_str.split('.')
-            parsed = []
-            for part in parts:
-                try:
-                    parsed.append(int(part))
-                except ValueError:
+            # 分割版本号为数字部分
+            def parse_version_parts(version_str):
+                parts = version_str.split('.')
+                parsed = []
+                for part in parts:
+                    try:
+                        parsed.append(int(part))
+                    except ValueError:
+                        parsed.append(0)
+                # 确保至少有3个部分
+                while len(parsed) < 3:
                     parsed.append(0)
-            # 确保至少有3个部分
-            while len(parsed) < 3:
-                parsed.append(0)
-            return parsed
-        
-        try:
-            current_parts = parse_version_parts(current_clean)
-            latest_parts = parse_version_parts(latest_clean)
+                return parsed
             
-            # 逐级比较版本号
-            for i in range(max(len(current_parts), len(latest_parts))):
-                current_part = current_parts[i] if i < len(current_parts) else 0
-                latest_part = latest_parts[i] if i < len(latest_parts) else 0
+            try:
+                current_parts = parse_version_parts(current_clean)
+                latest_parts = parse_version_parts(latest_clean)
                 
-                if latest_part > current_part:
-                    return True  # 有更新
-                elif latest_part < current_part:
-                    return False  # 版本回退，不更新
-            
-            return False  # 版本相同
-        except:
-            # 如果解析失败，回退到字符串比较
-            # 对于复杂版本格式，如果清理后的版本不同，应该允许更新
-            return latest_clean != current_clean
+                # 逐级比较版本号
+                for i in range(max(len(current_parts), len(latest_parts))):
+                    current_part = current_parts[i] if i < len(current_parts) else 0
+                    latest_part = latest_parts[i] if i < len(latest_parts) else 0
+                    
+                    if latest_part > current_part:
+                        return True  # 有更新
+                    elif latest_part < current_part:
+                        return False  # 版本回退，不更新
+                
+                return False  # 版本相同
+            except:
+                # 如果解析失败，回退到字符串比较
+                # 对于复杂版本格式，如果清理后的版本不同，应该允许更新
+                return latest_clean != current_clean
 
     def _schedule_restart(self, delay_seconds):
         """Schedule application restart after successful update"""
@@ -369,7 +377,7 @@ class UpdateService:
                     time.sleep(3)
                     # Exit current process gracefully
                     print("✅ New process started, exiting current process...")
-                    sys.exit(0)
+                    os._exit(0)
                 elif sys.platform == "win32":
                     # Windows restart logic for production
                     print("🖥️  Windows platform detected")
@@ -461,6 +469,8 @@ class UpdateService:
                 
             except Exception as e:
                 print(f"❌ Update job failed: {e}")
+                import traceback
+                traceback.print_exc()
                 try:
                     update_log = UpdateLog.query.filter_by(update_id=update_id).first()
                     if update_log:
@@ -578,6 +588,8 @@ class UpdateService:
         except (ReleaseDownloadError, PackageExtractionError, RuntimeError) as err:
             self._finalize_failure_with_logging(update_log, str(err))
         except Exception as err:  # pragma: no cover - unexpected error path
+            import traceback
+            traceback.print_exc()
             self._finalize_failure_with_logging(update_log, f'Update execution error: {err}')
 
     def _update_step_status(self, update_log: UpdateLog, step_name: str, output: str = None):

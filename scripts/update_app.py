@@ -4,6 +4,7 @@
 import argparse
 import os
 import sys
+import traceback
 from pathlib import Path
 
 from utils.update_package import ReleasePackageManager, ReleaseDownloadError, PackageExtractionError
@@ -28,6 +29,9 @@ def _build_preserve_list(raw_value: str):
 
 
 def main():
+    print("🔄 OTRS Web Application Update Script")
+    print("=" * 50)
+    
     args = parse_args()
     project_root = Path(args.working_dir or Path(__file__).resolve().parent.parent).resolve()
     if not project_root.exists():
@@ -40,6 +44,8 @@ def main():
     token = env.get('GITHUB_TOKEN')
     if token:
         print('🔐 Using GitHub token from environment for release download')
+    else:
+        print('⚠️  No GitHub token found - may encounter rate limiting')
 
     manager = ReleasePackageManager(
         repo=args.repo,
@@ -53,6 +59,8 @@ def main():
     print(f"📦 Release cache: {download_dir}")
     if args.force_reinstall:
         print("🔁 Force reinstall requested – proceeding without local version checks")
+    else:
+        print("🔍 Checking for updates...")
 
     # 0. Backup database before update
     print("🛡️  Creating database backup...")
@@ -69,32 +77,38 @@ def main():
 
     # 1. Fetch release metadata
     try:
+        print("🔍 Fetching release metadata...")
         metadata = manager.fetch_release_metadata(args.target)
     except ReleaseDownloadError as exc:
         raise SystemExit(f"❌ Fetching release metadata failed: {exc}") from exc
 
     target_version = args.target or metadata.tag_name
-    print(f"🔍 Preparing to install release: {target_version}")
+    print(f"🎯 Preparing to install release: {target_version}")
 
     # 2. Download archive
     try:
+        print("⬇️  Downloading release archive...")
         archive_path = manager.download_release_archive(metadata, target_version)
     except ReleaseDownloadError as exc:
         raise SystemExit(f"❌ Downloading release archive failed: {exc}") from exc
 
-    print(f"⬇️  Downloaded archive: {archive_path}")
+    print(f"✅ Downloaded archive: {archive_path}")
 
     # 3. Extract archive
     try:
+        print("📦 Extracting release archive...")
         source_root = manager.extract_archive(archive_path)
     except PackageExtractionError as exc:
         raise SystemExit(f"❌ Extracting release archive failed: {exc}") from exc
 
-    print(f"🗂️  Extracted release contents into: {source_root}")
+    print(f"✅ Extracted release contents into: {source_root}")
 
     # 4. Sync files into project
     print("🔁 Synchronising release files into project directory...")
-    manager.sync_to_project(source_root)
+    try:
+        manager.sync_to_project(source_root)
+    except Exception as exc:
+        raise SystemExit(f"❌ Synchronising files failed: {exc}") from exc
 
     # 5. Install dependencies
     if args.skip_deps:
@@ -104,20 +118,38 @@ def main():
         if args.pip_extra_args:
             pip_command.extend(args.pip_extra_args.split())
         print("📦 Installing Python dependencies...")
-        manager.install_dependencies(pip_command, env=env)
+        try:
+            manager.install_dependencies(pip_command, env=env)
+        except Exception as exc:
+            raise SystemExit(f"❌ Installing dependencies failed: {exc}") from exc
         print("✅ Dependencies installed")
 
     # 6. Run optional migrations
+    print("🔍 Checking for migration scripts...")
     migrations = [
         project_root / 'upgrade_statistics_log_columns.py',
         project_root / 'upgrade_database_with_new_records_count.py',
     ]
+    executed_migrations = 0
     for script_path in migrations:
         if script_path.exists():
             print(f"🛠️  Running migration script: {script_path.name}")
-            manager.run_migration(script_path, env=env)
+            try:
+                manager.run_migration(script_path, env=env)
+                executed_migrations += 1
+            except Exception as exc:
+                raise SystemExit(f"❌ Migration script {script_path.name} failed: {exc}") from exc
+        else:
+            print(f"⏭️  Migration script not found, skipping: {script_path.name}")
 
-    print("✅ Update completed successfully")
+    if executed_migrations > 0:
+        print(f"✅ {executed_migrations} migration scripts executed")
+    else:
+        print("ℹ️  No migration scripts executed")
+
+    print("\n" + "=" * 50)
+    print("🎉 Update completed successfully!")
+    print("🔄 Please restart the application to apply changes")
     return 0
 
 
@@ -126,4 +158,5 @@ if __name__ == '__main__':
         sys.exit(main())
     except Exception as exc:  # pragma: no cover - interactive script error handling
         print(f"❌ Update failed: {exc}")
+        traceback.print_exc()
         sys.exit(1)
