@@ -60,21 +60,36 @@ class SystemConfigService:
     
     def set_config_value(self, key, value, description="", category="", is_encrypted=False):
         """Set configuration value"""
-        return SystemConfig.set_config_value(
-            key=key,
-            value=value,
-            description=description,
-            category=category,
-            is_encrypted=is_encrypted
-        )
+        # Ensure we're in an application context
+        if not self.app:
+            raise RuntimeError("SystemConfigService not initialized with Flask app")
+            
+        with self.app.app_context():
+            return SystemConfig.set_config_value(
+                key=key,
+                value=value,
+                description=description,
+                category=category,
+                is_encrypted=is_encrypted
+            )
     
     def get_all_configs(self):
         """Get all configurations"""
-        return SystemConfig.get_all_configs()
+        # Ensure we're in an application context
+        if not self.app:
+            raise RuntimeError("SystemConfigService not initialized with Flask app")
+            
+        with self.app.app_context():
+            return SystemConfig.get_all_configs()
     
     def get_configs_by_category(self, category):
         """Get configurations by category"""
-        return SystemConfig.get_configs_by_category(category)
+        # Ensure we're in an application context
+        if not self.app:
+            raise RuntimeError("SystemConfigService not initialized with Flask app")
+            
+        with self.app.app_context():
+            return SystemConfig.get_configs_by_category(category)
     
     def get_config_dict(self):
         """Get all configurations as dictionary"""
@@ -83,67 +98,72 @@ class SystemConfigService:
     
     def initialize_default_configs(self):
         """Initialize default configurations"""
-        default_configs = [
-            {
-                'key': 'SECRET_KEY',
-                'value': 'dev-secret-key-change-in-production',
-                'description': 'Application secret key for security',
-                'category': 'security'
-            },
-            {
-                'key': 'APP_PORT',
-                'value': '5001',
-                'description': 'Application port',
-                'category': 'server'
-            },
-            {
-                'key': 'APP_HOST',
-                'value': '0.0.0.0',
-                'description': 'Application host',
-                'category': 'server'
-            },
-            {
-                'key': 'DAILY_STATS_PASSWORD',
-                'value': 'Enabling@2025',
-                'description': 'Password for daily statistics access',
-                'category': 'security'
-            },
-            {
-                'key': 'APP_UPDATE_GITHUB_TOKEN',
-                'value': '',
-                'description': 'GitHub token for update checks',
-                'category': 'update',
-                'is_encrypted': True
-            },
-            {
-                'key': 'BACKUP_RETENTION_DAYS',
-                'value': '30',
-                'description': 'Number of days to keep backups',
-                'category': 'backup'
-            },
-            {
-                'key': 'BACKUP_TIME',
-                'value': '02:00',
-                'description': 'Time to perform automatic backups',
-                'category': 'backup'
-            },
-            {
-                'key': 'ADMIN_PASSWORD',
-                'value': 'admin@2025',
-                'description': 'Admin password for configuration management',
-                'category': 'security',
-                'is_encrypted': True
-            }
-        ]
-        
-        for config_data in default_configs:
-            # Only initialize if not already exists
-            existing = SystemConfig.query.filter_by(key=config_data['key']).first()
-            if not existing:
-                self.set_config_value(
-                    key=config_data['key'],
-                    value=config_data['value'],
-                    description=config_data['description'],
-                    category=config_data['category'],
-                    is_encrypted=config_data.get('is_encrypted', False)
-                )
+        # Ensure we're in an application context
+        if not self.app:
+            raise RuntimeError("SystemConfigService not initialized with Flask app")
+            
+        with self.app.app_context():
+            default_configs = [
+                {
+                    'key': 'SECRET_KEY',
+                    'value': 'dev-secret-key-change-in-production',
+                    'description': 'Application secret key for security',
+                    'category': 'security'
+                },
+                {
+                    'key': 'APP_PORT',
+                    'value': '5001',
+                    'description': 'Application port',
+                    'category': 'server'
+                },
+                {
+                    'key': 'APP_HOST',
+                    'value': '0.0.0.0',
+                    'description': 'Application host',
+                    'category': 'server'
+                },
+                {
+                    'key': 'DAILY_STATS_PASSWORD',
+                    'value': 'Enabling@2025',
+                    'description': 'Password for daily statistics access',
+                    'category': 'security'
+                },
+                {
+                    'key': 'APP_UPDATE_GITHUB_TOKEN',
+                    'value': '',
+                    'description': 'GitHub token for update checks',
+                    'category': 'update',
+                    'is_encrypted': True
+                },
+                {
+                    'key': 'BACKUP_RETENTION_DAYS',
+                    'value': '30',
+                    'description': 'Number of days to keep backups',
+                    'category': 'backup'
+                },
+                {
+                    'key': 'BACKUP_TIME',
+                    'value': '02:00',
+                    'description': 'Time to perform automatic backups',
+                    'category': 'backup'
+                },
+                {
+                    'key': 'ADMIN_PASSWORD',
+                    'value': 'admin@2025',
+                    'description': 'Admin password for configuration management',
+                    'category': 'security',
+                    'is_encrypted': True
+                }
+            ]
+            
+            for config_data in default_configs:
+                # Only initialize if not already exists
+                existing = SystemConfig.query.filter_by(key=config_data['key']).first()
+                if not existing:
+                    self.set_config_value(
+                        key=config_data['key'],
+                        value=config_data['value'],
+                        description=config_data['description'],
+                        category=config_data['category'],
+                        is_encrypted=config_data.get('is_encrypted', False)
+                    )
