@@ -11,7 +11,7 @@ import json
 # Create blueprint
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
-@admin_bp.route('/')
+@admin_bp.route('/', methods=['GET', 'POST'])
 @require_admin_password
 def admin_dashboard():
     """Admin dashboard"""
