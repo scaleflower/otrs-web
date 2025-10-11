@@ -5,6 +5,7 @@ Service for managing system configurations
 from models import SystemConfig, db
 from datetime import datetime
 import json
+import os
 
 
 class SystemConfigService:
@@ -42,7 +43,6 @@ class SystemConfigService:
     
     def _get_env_value(self, key):
         """Get value from environment variables"""
-        import os
         # Map config keys to environment variable names
         env_mapping = {
             'SECRET_KEY': 'SECRET_KEY',
@@ -52,6 +52,7 @@ class SystemConfigService:
             'APP_UPDATE_GITHUB_TOKEN': 'APP_UPDATE_GITHUB_TOKEN',
             'BACKUP_RETENTION_DAYS': 'BACKUP_RETENTION_DAYS',
             'BACKUP_TIME': 'BACKUP_TIME',
+            'ADMIN_PASSWORD': 'ADMIN_PASSWORD'
         }
         
         env_key = env_mapping.get(key, key)
@@ -125,6 +126,13 @@ class SystemConfigService:
                 'value': '02:00',
                 'description': 'Time to perform automatic backups',
                 'category': 'backup'
+            },
+            {
+                'key': 'ADMIN_PASSWORD',
+                'value': 'admin@2025',
+                'description': 'Admin password for configuration management',
+                'category': 'security',
+                'is_encrypted': True
             }
         ]
         

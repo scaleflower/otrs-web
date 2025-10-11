@@ -4,7 +4,6 @@ Base configuration for OTRS Web Application
 
 import os
 from datetime import timedelta
-from services import system_config_service
 
 class BaseConfig:
     """Base configuration class"""

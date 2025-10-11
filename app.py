@@ -18,17 +18,6 @@ importlib.reload(config)
 from config import Config
 from models import init_db
 from werkzeug.utils import secure_filename
-from services import (
-    init_services,
-    ticket_service,
-    analysis_service,
-    export_service,
-    scheduler_service,
-    update_service,
-    system_config_service
-)
-from utils import get_processing_status, validate_age_segment, validate_responsible_list, validate_json_data
-from utils.auth import require_daily_stats_password, PasswordProtection
 
 # Import blueprints
 from blueprints.upload_bp import upload_bp
@@ -38,6 +27,20 @@ from blueprints.daily_stats_bp import daily_stats_bp
 from blueprints.backup_bp import backup_bp
 from blueprints.update_bp import update_bp
 from blueprints.admin_bp import admin_bp
+
+# Import services after app initialization to avoid circular imports
+from services import (
+    init_services,
+    ticket_service,
+    analysis_service,
+    export_service,
+    scheduler_service,
+    update_service,
+    system_config_service
+)
+
+from utils import get_processing_status, validate_age_segment, validate_responsible_list, validate_json_data
+from utils.auth import require_daily_stats_password, PasswordProtection
 
 # Create Flask application
 app = Flask(__name__)
