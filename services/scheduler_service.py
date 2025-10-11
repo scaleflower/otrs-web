@@ -19,6 +19,13 @@ class SchedulerService:
         self.backup_service = None
         self.app = None
     
+    def initialize(self, app):
+        """Initialize service with Flask app"""
+        self.app = app
+        # Initialize scheduler when app is available
+        if app:
+            self.initialize_scheduler(app)
+    
     def initialize_scheduler(self, app):
         """Initialize and start the scheduler"""
         if self.scheduler is None:

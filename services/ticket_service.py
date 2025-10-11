@@ -36,6 +36,11 @@ class TicketService:
             'sub_category': ['Sub Category', 'SubCategory', 'sub_category', 'Ticket Sub Category'],
             'responsible': ['Responsible', 'responsible', 'Assignee', 'assignee', '处理人', '负责人']
         }
+        self.app = None
+    
+    def initialize(self, app):
+        """Initialize service with Flask app"""
+        self.app = app
     
     def process_upload(self, file, clear_existing=True):
         """Process uploaded Excel file and import tickets"""

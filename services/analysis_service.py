@@ -10,7 +10,11 @@ class AnalysisService:
     """Service for data analysis operations"""
     
     def __init__(self):
-        pass
+        self.app = None
+    
+    def initialize(self, app):
+        """Initialize service with Flask app"""
+        self.app = app
     
     def analyze_tickets_from_database(self):
         """Main function for OTRS ticket data analysis from database using SQL queries"""

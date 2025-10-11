@@ -17,7 +17,11 @@ class ExportService:
     """Service for export operations"""
     
     def __init__(self):
-        pass
+        self.app = None
+    
+    def initialize(self, app):
+        """Initialize service with Flask app"""
+        self.app = app
     
     def export_to_excel(self, analysis_data):
         """Export analysis results to Excel with histogram"""
