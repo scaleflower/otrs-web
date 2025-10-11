@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统管理 - OTRS系统配置</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-size: 0.875rem;
+        }
+        
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+        }
+        
+        .navbar-brand {
+            padding-top: .75rem;
+            padding-bottom: .75rem;
+            font-size: 1rem;
+            background-color: rgba(0, 0, 0, .25);
+            border: 1px solid rgba(0, 0, 0, .1);
+        }
+        
+        .navbar .navbar-toggler {
+            top: .25rem;
+            right: 1rem;
+        }
+        
+        .sidebar-sticky {
+            position: relative;
+            top: 0;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        
+        .sidebar .nav-link {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .sidebar .nav-link.active {
+            color: #007bff;
+        }
+        
+        .main-content {
+            margin-left: 220px;
+        }
+        
+        .section-title {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="navbar navbar-dark sticky-top bg-dark flex-md-nowrap shadow">
+        <a class="navbar-brand col-md-3 col-lg-2 me-0 px-3" href="{{ url_for('admin.admin_dashboard') }}">
+            <i class="fas fa-cogs"></i> 系统管理
+        </a>
+        <button class="navbar-toggler position-absolute d-md-none collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#sidebarMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="navbar-nav">
+            <div class="nav-item text-nowrap">
+                <a class="nav-link px-3" href="{{ url_for('index') }}">
+                    <i class="fas fa-home"></i> 返回主页
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav id="sidebarMenu" class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+                <div class="sidebar-sticky pt-3">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="{{ url_for('admin.admin_dashboard') }}">
+                                <i class="fas fa-tachometer-alt"></i> 仪表板
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('admin.config_list') }}">
+                                <i class="fas fa-cog"></i> 系统配置
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <!-- Main Content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 main-content">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2"><i class="fas fa-tachometer-alt"></i> 仪表板</h1>
+                </div>
+
+                <!-- System Overview -->
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="card-title mb-0"><i class="fas fa-info-circle"></i> 系统概览</h5>
+                            </div>
+                            <div class="card-body">
+                                <p>欢迎使用OTRS系统管理界面。在这里您可以管理系统的各项配置。</p>
+                                <p>当前系统配置项数量: <strong>{{ configs|length }}</strong></p>
+                                
+                                <div class="mt-3">
+                                    <a href="{{ url_for('admin.config_list') }}" class="btn btn-primary">
+                                        <i class="fas fa-cog"></i> 管理配置
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configuration Categories -->
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <h5 class="section-title">配置分类</h5>
+                        <div class="row">
+                            {% set categories = {} %}
+                            {% for config in configs %}
+                                {% if config.category not in categories %}
+                                    {% set _ = categories.update({config.category: 1}) %}
+                                {% else %}
+                                    {% set count = categories[config.category] + 1 %}
+                                    {% set _ = categories.update({config.category: count}) %}
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% for category, count in categories.items() %}
+                            <div class="col-md-4 mb-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h6 class="card-title">
+                                            {% if category == 'security' %}
+                                                <i class="fas fa-shield-alt"></i>
+                                            {% elif category == 'server' %}
+                                                <i class="fas fa-server"></i>
+                                            {% elif category == 'update' %}
+                                                <i class="fas fa-sync-alt"></i>
+                                            {% elif category == 'backup' %}
+                                                <i class="fas fa-hdd"></i>
+                                            {% else %}
+                                                <i class="fas fa-folder"></i>
+                                            {% endif %}
+                                            {{ category or '未分类' }}
+                                        </h6>
+                                        <p class="card-text">{{ count }} 项配置</p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

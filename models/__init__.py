@@ -14,6 +14,7 @@ from .statistics import Statistic, DailyStatistics, StatisticsConfig, Statistics
 from .user import ResponsibleConfig, DatabaseLog
 from .update import AppUpdateStatus
 from .update_log import UpdateLog, UpdateStepLog, init_update_log_models
+from .system_config import SystemConfig
 
 # Export all models for easy import
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     'AppUpdateStatus',
     'UpdateLog',
     'UpdateStepLog',
+    'SystemConfig',
     'init_update_log_models'
 ]
 

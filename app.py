@@ -3,16 +3,7 @@ OTRS Ticket Analysis Web Application - Refactored
 Flask-based ticket data analysis web application with modular architecture
 """
 
-# Load environment variables from .env file (if available)
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-    print("✅ 已加载 .env 文件")
-except ImportError:
-    print("⚠️  python-dotenv 未安装，使用系统环境变量")
-    print("💡 安装提示：pip install python-dotenv")
-except Exception as e:
-    print(f"⚠️  加载 .env 文件时出错：{e}")
+# Removed .env file loading to avoid committing sensitive information to GitHub
 
 import glob
 import os
@@ -33,10 +24,20 @@ from services import (
     analysis_service,
     export_service,
     scheduler_service,
-    update_service
+    update_service,
+    system_config_service
 )
 from utils import get_processing_status, validate_age_segment, validate_responsible_list, validate_json_data
 from utils.auth import require_daily_stats_password, PasswordProtection
+
+# Import blueprints
+from blueprints.upload_bp import upload_bp
+from blueprints.statistics_bp import statistics_bp
+from blueprints.export_bp import export_bp
+from blueprints.daily_stats_bp import daily_stats_bp
+from blueprints.backup_bp import backup_bp
+from blueprints.update_bp import update_bp
+from blueprints.admin_bp import admin_bp
 
 # Create Flask application
 app = Flask(__name__)
@@ -49,6 +50,15 @@ init_db(app)
 
 # Initialize services
 init_services(app)
+
+# Register blueprints
+app.register_blueprint(upload_bp)
+app.register_blueprint(statistics_bp)
+app.register_blueprint(export_bp)
+app.register_blueprint(daily_stats_bp)
+app.register_blueprint(backup_bp)
+app.register_blueprint(update_bp)
+app.register_blueprint(admin_bp)
 
 # Perform an initial update check so clients know the latest version
 if app.config.get('APP_UPDATE_ENABLED', True):

@@ -12,16 +12,13 @@ from .update_service import UpdateService
 
 # Export all services for easy import
 __all__ = [
-    'TicketService',
-    'AnalysisService', 
-    'ExportService',
-    'SchedulerService',
-    'UpdateService',
     'ticket_service',
-    'analysis_service',
+    'analysis_service', 
     'export_service',
     'scheduler_service',
-    'update_service'
+    'update_service',
+    'system_config_service',
+    'init_services'
 ]
 
 # Global service instances (singleton pattern)
@@ -33,10 +30,18 @@ scheduler_service = SchedulerService(
     analysis_service=analysis_service,
     update_service=update_service
 )
+system_config_service = SystemConfigService()
 
-def init_services(app):
+def init_services(app: Flask):
     """Initialize all services with Flask app"""
+    ticket_service.initialize(app)
+    analysis_service.initialize(app)
+    export_service.initialize(app)
     update_service.initialize(app)
+    system_config_service.init_app(app)
+    
+    # Initialize default configurations
+    system_config_service.initialize_default_configs()
 
     should_start_scheduler = True
     if app.config.get('DEBUG'):

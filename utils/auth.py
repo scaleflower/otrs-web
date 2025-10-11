@@ -3,80 +3,115 @@ Authentication utilities for OTRS Web Application
 """
 
 from functools import wraps
-from flask import request, jsonify, session, current_app
-import hashlib
-import secrets
+from flask import request, jsonify, render_template, redirect, url_for, flash, session, abort
+from werkzeug.security import check_password_hash, generate_password_hash
+import os
+from datetime import datetime, timedelta
 
 class PasswordProtection:
-    """Password protection utilities for daily statistics"""
+    """Password protection utility class"""
     
-    SESSION_KEY = 'daily_stats_authenticated'
+    def __init__(self, app=None):
+        self.app = app
+        if app:
+            self.init_app(app)
     
-    @staticmethod
-    def hash_password(password):
-        """Create a hash of the password for comparison"""
-        return hashlib.sha256(password.encode('utf-8')).hexdigest()
-    
-    @staticmethod
-    def verify_password(provided_password):
-        """Verify if the provided password matches the configured password"""
-        configured_password = current_app.config.get('DAILY_STATS_PASSWORD', 'admin123')
-        return provided_password == configured_password
-    
-    @staticmethod
-    def is_authenticated():
-        """Check if the current session is authenticated for daily stats modifications"""
-        return session.get(PasswordProtection.SESSION_KEY, False)
-    
-    @staticmethod
-    def authenticate_session():
-        """Mark the current session as authenticated"""
-        session[PasswordProtection.SESSION_KEY] = True
-        session.permanent = True
-    
-    @staticmethod
-    def deauthenticate_session():
-        """Remove authentication from the current session"""
-        session.pop(PasswordProtection.SESSION_KEY, None)
+    def init_app(self, app):
+        """Initialize with Flask app"""
+        self.app = app
 
 def require_daily_stats_password(f):
-    """
-    Decorator to require password authentication for daily statistics modification endpoints
-    """
+    """Decorator to require password for daily statistics access"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # Check if already authenticated in this session
-        if PasswordProtection.is_authenticated():
+        # Check if password is already validated in session
+        if 'daily_stats_authenticated' in session:
+            # Check if session is still valid (2 hours)
+            auth_time = session.get('daily_stats_auth_time')
+            if auth_time:
+                auth_datetime = datetime.fromisoformat(auth_time)
+                if datetime.utcnow() - auth_datetime < timedelta(hours=2):
+                    return f(*args, **kwargs)
+            
+            # Session expired, remove from session
+            session.pop('daily_stats_authenticated', None)
+            session.pop('daily_stats_auth_time', None)
+        
+        # Check if password is provided in request
+        if request.method == 'POST':
+            password = request.form.get('password') or request.json.get('password') if request.is_json else None
+        else:
+            password = request.args.get('password')
+        
+        # Get expected password from config
+        expected_password = os.environ.get('DAILY_STATS_PASSWORD') or 'Enabling@2025'
+        
+        if password and password == expected_password:
+            # Set session for 2 hours
+            session['daily_stats_authenticated'] = True
+            session['daily_stats_auth_time'] = datetime.utcnow().isoformat()
             return f(*args, **kwargs)
         
-        # Check if password is provided in the request
-        try:
-            if request.is_json:
-                data = request.get_json() or {}
-                password = data.get('auth_password')
-            else:
-                password = request.form.get('auth_password')
-        except Exception:
-            # If JSON parsing fails, assume no password provided
-            password = None
-        
-        if not password:
+        # Return password form
+        if request.is_json:
             return jsonify({
-                'error': 'Password required for this operation',
-                'auth_required': True
+                'error': 'Password required',
+                'message': 'Please provide password in request'
             }), 401
         
-        # Verify password
-        if not PasswordProtection.verify_password(password):
-            return jsonify({
-                'error': 'Invalid password',
-                'auth_required': True
-            }), 401
-        
-        # Authenticate session
-        PasswordProtection.authenticate_session()
-        
-        # Proceed with the original function
-        return f(*args, **kwargs)
+        return render_template('password_required.html', target_url=request.url)
     
     return decorated_function
+
+def require_admin_password(f):
+    """Decorator to require admin password for configuration management"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check if admin is already authenticated in session
+        if 'admin_authenticated' in session:
+            # Check if session is still valid (1 hour)
+            auth_time = session.get('admin_auth_time')
+            if auth_time:
+                auth_datetime = datetime.fromisoformat(auth_time)
+                if datetime.utcnow() - auth_datetime < timedelta(hours=1):
+                    return f(*args, **kwargs)
+            
+            # Session expired, remove from session
+            session.pop('admin_authenticated', None)
+            session.pop('admin_auth_time', None)
+        
+        # Check if password is provided in request
+        if request.method == 'POST':
+            password = request.form.get('admin_password') or request.json.get('admin_password') if request.is_json else None
+        else:
+            password = request.args.get('admin_password')
+        
+        # Get expected admin password from config
+        expected_password = os.environ.get('ADMIN_PASSWORD') or 'admin@2025'
+        
+        if password and password == expected_password:
+            # Set session for 1 hour
+            session['admin_authenticated'] = True
+            session['admin_auth_time'] = datetime.utcnow().isoformat()
+            return f(*args, **kwargs)
+        
+        # Return admin password form
+        if request.is_json:
+            return jsonify({
+                'error': 'Admin password required',
+                'message': 'Please provide admin password in request'
+            }), 401
+        
+        # For AJAX requests, return JSON
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'error': 'Admin password required',
+                'redirect': url_for('admin_password_form')
+            }), 401
+        
+        return render_template('admin/password_required.html')
+    
+    return decorated_function
+
+# Global password protection instance
+password_protection = PasswordProtection()
