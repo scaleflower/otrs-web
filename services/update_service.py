@@ -80,20 +80,17 @@ class UpdateService:
             repo = self._config('APP_UPDATE_REPO')
             token = self._config('APP_UPDATE_GITHUB_TOKEN')
             
-            # 检查是否有Token
-            if not token or token == 'your_github_token_here':
-                return {
-                    'success': False, 
-                    'error': 'GitHub Token未配置，请设置有效的APP_UPDATE_GITHUB_TOKEN环境变量',
-                    'help_url': 'https://github.com/settings/tokens',
-                    'error_type': 'token_missing'
-                }
-            
+            # 构建请求头，即使没有token也继续执行
             headers = {
                 'Accept': 'application/vnd.github+json',
-                'User-Agent': 'otrs-web-update-service',
-                'Authorization': f'Bearer {token}'
+                'User-Agent': 'otrs-web-update-service'
             }
+            
+            # 如果有token则添加到请求头
+            if token and token != 'your_github_token_here':
+                headers['Authorization'] = f'Bearer {token}'
+            elif token == 'your_github_token_here':
+                print("⚠️  检测到默认的GitHub Token，请设置有效的APP_UPDATE_GITHUB_TOKEN环境变量以避免速率限制")
 
             status = AppUpdateStatus.query.first()
             if not status:
@@ -108,6 +105,17 @@ class UpdateService:
                 self._record_error(error_msg)
                 return {'success': False, 'error': error_msg}
 
+            # 处理API速率限制
+            if response.status_code == 403:
+                # 检查是否是速率限制问题
+                if response.headers.get('X-RateLimit-Remaining') == '0':
+                    reset_time = response.headers.get('X-RateLimit-Reset')
+                    error_msg = f'GitHub API rate limit exceeded. Rate limit will reset at {reset_time}.'
+                    if not token:
+                        error_msg += ' 请设置APP_UPDATE_GITHUB_TOKEN环境变量以提高速率限制。'
+                    self._record_error(error_msg)
+                    return {'success': False, 'error': error_msg}
+            
             if response.status_code == 404:
                 status.latest_version = status.current_version
                 status.status = 'up_to_date'
@@ -487,12 +495,12 @@ class UpdateService:
         preserve_paths = self._resolve_preserve_paths()
         token = self._config('APP_UPDATE_GITHUB_TOKEN')
         env = os.environ.copy()
-        if token:
+        if token and token != 'your_github_token_here':
             env['GITHUB_TOKEN'] = token
 
         manager = ReleasePackageManager(
             repo=repo,
-            token=token,
+            token=token if token != 'your_github_token_here' else None,  # 只有在token有效时才传递
             project_root=project_root,
             download_root=download_dir,
             preserve_paths=preserve_paths,

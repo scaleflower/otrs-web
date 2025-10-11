@@ -102,6 +102,8 @@ class ReleasePackageManager:
             "Accept": "application/vnd.github+json",
             "User-Agent": self.USER_AGENT,
         }
+        
+        # 只有在token有效时才添加到请求头
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
 
@@ -112,6 +114,17 @@ class ReleasePackageManager:
 
         print(f"🔍 Fetching release metadata from: {url}")
         response = self._session.get(url, headers=headers, timeout=self._timeout)
+        
+        # 处理API速率限制
+        if response.status_code == 403:
+            # 检查是否是速率限制问题
+            if response.headers.get('X-RateLimit-Remaining') == '0':
+                reset_time = response.headers.get('X-RateLimit-Reset')
+                error_msg = f"GitHub API rate limit exceeded. Rate limit will reset at {reset_time}."
+                if not self.token:
+                    error_msg += " 请设置GITHUB_TOKEN环境变量以提高速率限制。"
+                raise ReleaseDownloadError(error_msg)
+        
         if response.status_code != 200:
             raise ReleaseDownloadError(
                 f"GitHub release lookup failed ({response.status_code}): {response.text[:200]}"
@@ -134,6 +147,7 @@ class ReleasePackageManager:
     def download_release_archive(self, metadata: ReleaseMetadata, target_version: str) -> Path:
         """Download tarball/zipball for the release and return archive path."""
         headers = {"User-Agent": self.USER_AGENT}
+        # 只有在token有效时才添加到请求头
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
 
@@ -150,6 +164,16 @@ class ReleasePackageManager:
         print(f"📂 Saving to: {archive_path}")
 
         with self._session.get(download_url, headers=headers, timeout=self._timeout, stream=True) as response:
+            # 处理API速率限制
+            if response.status_code == 403:
+                # 检查是否是速率限制问题
+                if response.headers.get('X-RateLimit-Remaining') == '0':
+                    reset_time = response.headers.get('X-RateLimit-Reset')
+                    error_msg = f"GitHub API rate limit exceeded. Rate limit will reset at {reset_time}."
+                    if not self.token:
+                        error_msg += " 请设置GITHUB_TOKEN环境变量以提高速率限制。"
+                    raise ReleaseDownloadError(error_msg)
+            
             if response.status_code != 200:
                 raise ReleaseDownloadError(
                     f"Failed to download release archive ({response.status_code}): {response.text[:200]}"

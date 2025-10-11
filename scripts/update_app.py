@@ -49,7 +49,7 @@ def main():
 
     manager = ReleasePackageManager(
         repo=args.repo,
-        token=token,
+        token=token,  # 传递token，即使为None也没关系
         project_root=project_root,
         download_root=download_dir,
         preserve_paths=preserve_paths,
