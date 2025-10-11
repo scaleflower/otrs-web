@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 APP_NAME="otrs-web"
 APP_USER="www-data"
 APP_GROUP="www-data"
-APP_PORT="5000"
+APP_PORT="15001"
 APP_DIR="$(pwd)"
 
 # 日志函数
