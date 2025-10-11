@@ -112,7 +112,7 @@ class SystemConfigService:
                 },
                 {
                     'key': 'APP_PORT',
-                    'value': '5001',
+                    'value': '15001',
                     'description': 'Application port',
                     'category': 'server'
                 },

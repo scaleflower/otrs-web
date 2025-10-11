@@ -37,7 +37,7 @@ class BaseConfig:
 
     # Server settings
     APP_HOST = os.environ.get('APP_HOST', '0.0.0.0')
-    APP_PORT = int(os.environ.get('APP_PORT', os.environ.get('PORT', '5001')))
+    APP_PORT = int(os.environ.get('APP_PORT', os.environ.get('PORT', '15001')))
     
     # Cache settings
     CACHE_TYPE = "simple"
