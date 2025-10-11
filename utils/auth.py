@@ -106,7 +106,7 @@ def require_admin_password(f):
         if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
             return jsonify({
                 'error': 'Admin password required',
-                'redirect': url_for('admin_password_form')
+                'message': 'Please provide admin password in request'
             }), 401
         
         return render_template('admin/password_required.html')
