@@ -7,6 +7,7 @@ from flask import request, jsonify, render_template, redirect, url_for, flash, s
 from werkzeug.security import check_password_hash, generate_password_hash
 import os
 from datetime import datetime, timedelta
+from services import system_config_service
 
 class PasswordProtection:
     """Password protection utility class"""
@@ -86,8 +87,8 @@ def require_admin_password(f):
         else:
             password = request.args.get('admin_password')
         
-        # Get expected admin password from config
-        expected_password = os.environ.get('ADMIN_PASSWORD') or 'admin@2025'
+        # Get expected admin password from system config service
+        expected_password = system_config_service.get_config_value('ADMIN_PASSWORD', 'admin@2025')
         
         if password and password == expected_password:
             # Set session for 1 hour
