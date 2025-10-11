@@ -138,12 +138,17 @@
 - 设置环境变量启用/配置自动更新：
   - `APP_UPDATE_ENABLED`（默认为 `true`）控制是否启用自动更新。
   - `APP_UPDATE_REPO` 设置 GitHub 仓库（默认为 `Jacky/otrs-web`）。
-  - `APP_UPDATE_BRANCH` 作为无标签时的备用分支，默认 `main`。
-  - `APP_UPDATE_POLL_INTERVAL` 控制后台轮询 GitHub 发布的周期（秒）。
   - `APP_UPDATE_GITHUB_TOKEN` 可选的 GitHub Token，用于提高速率或访问私有仓库。
+  - `APP_UPDATE_DOWNLOAD_DIR` 自定义更新包缓存目录（默认 `instance/releases`）。
+  - `APP_UPDATE_PRESERVE_PATHS` 逗号分隔的保留路径列表，默认 `.env,uploads,database_backups,logs,db/otrs_data.db`。
+  - `APP_UPDATE_INSTALL_DEPENDENCIES` 是否在更新后执行 `pip install`（默认执行）。
+  - `APP_UPDATE_RUN_MIGRATIONS` 是否执行内置数据库迁移脚本（默认执行）。
+  - `APP_UPDATE_PIP_ARGS` 附加到 `pip install` 命令的可选参数。
+  - `APP_UPDATE_MIGRATION_SCRIPTS` 逗号分隔的迁移脚本相对路径列表，覆盖默认值。
   - `APP_UPDATE_RESTART_DELAY` 更新成功后等待多少秒再自动重启应用（默认 `5` 秒）。
 - 服务器上提供 `scripts/update_app.py` 脚本：
-  - 自动执行 `git fetch`、切换标签/分支、安装依赖并运行升级脚本。
+  - 通过 GitHub Release API 下载 tarball、解压并同步到项目目录，无需安装 Git。
+  - 按顺序执行数据库备份、文件同步、依赖安装和迁移脚本。
   - 支持 `--skip-deps`、`--pip-extra-args` 等参数，便于自定义部署流程。
 - 后端启动时会执行一次版本检查，之后由调度器按配置周期轮询。
 - 管理端调用顺序：

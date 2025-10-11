@@ -1060,9 +1060,14 @@ if __name__ == '__main__':
     # Initialize configuration
     Config.init_app(app)
     
+    # Determine runtime configuration (prefer environment overrides for convenience)
+    host = os.environ.get('APP_HOST', app.config.get('APP_HOST', '0.0.0.0'))
+    port = int(os.environ.get('APP_PORT', app.config.get('APP_PORT', 5001)))
+    debug_flag = app.config.get('DEBUG', False)
+    
     # Run application
     app.run(
-        debug=app.config.get('DEBUG', False),
-        host=app.config.get('APP_HOST', '0.0.0.0'),
-        port=app.config.get('APP_PORT', 5001)
+        debug=debug_flag,
+        host=host,
+        port=port
     )

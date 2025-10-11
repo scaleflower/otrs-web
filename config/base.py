@@ -69,6 +69,15 @@ class BaseConfig:
     APP_UPDATE_SCRIPT = os.environ.get('APP_UPDATE_SCRIPT', 'scripts/update_app.py')
     APP_UPDATE_GITHUB_TOKEN = os.environ.get('APP_UPDATE_GITHUB_TOKEN')
     APP_UPDATE_RESTART_DELAY = int(os.environ.get('APP_UPDATE_RESTART_DELAY', '5'))
+    APP_UPDATE_DOWNLOAD_DIR = os.environ.get('APP_UPDATE_DOWNLOAD_DIR')
+    APP_UPDATE_PRESERVE_PATHS = os.environ.get(
+        'APP_UPDATE_PRESERVE_PATHS',
+        '.env,uploads,database_backups,logs,db/otrs_data.db'
+    )
+    APP_UPDATE_INSTALL_DEPENDENCIES = os.environ.get('APP_UPDATE_INSTALL_DEPENDENCIES', 'true').lower() in ['1', 'true', 'yes', 'on']
+    APP_UPDATE_RUN_MIGRATIONS = os.environ.get('APP_UPDATE_RUN_MIGRATIONS', 'true').lower() in ['1', 'true', 'yes', 'on']
+    APP_UPDATE_PIP_ARGS = os.environ.get('APP_UPDATE_PIP_ARGS')
+    APP_UPDATE_MIGRATION_SCRIPTS = os.environ.get('APP_UPDATE_MIGRATION_SCRIPTS')
 
     @staticmethod
     def init_app(app):

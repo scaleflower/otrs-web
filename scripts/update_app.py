@@ -1,145 +1,123 @@
 #!/usr/bin/env python3
-"""Utility script to update the OTRS web application from GitHub releases/tag."""
+"""Utility script to update the OTRS web application using HTTP releases."""
 
 import argparse
 import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
-
-def run_command(command, cwd, env=None):
-    """Execute shell command and raise exception on failure"""
-    print(f"➡️  Running: {' '.join(command)}")
-    result = subprocess.run(command, cwd=cwd, env=env, check=False, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Command failed (code {result.returncode}): {' '.join(command)}\n"
-            f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
-        )
-    return result
-
-
-def backup_database(project_root):
-    """Create a backup of the database before update"""
-    # 检查多个可能的数据库路径
-    possible_db_paths = [
-        project_root / 'db' / 'otrs_data.db',      # 当前使用的数据库
-        project_root / 'instance' / 'otrs_web.db', # 可能的其他位置
-    ]
-    
-    db_path = None
-    for path in possible_db_paths:
-        if path.exists():
-            db_path = path
-            break
-    
-    if db_path:
-        backup_dir = project_root / 'database_backups'
-        backup_dir.mkdir(exist_ok=True)
-        
-        timestamp = os.environ.get('UPDATE_TIMESTAMP', 'manual')
-        backup_path = backup_dir / f'backup_before_update_{timestamp}.db'
-        
-        print(f"💾 Creating database backup: {db_path.name} -> {backup_path.name}")
-        shutil.copy2(db_path, backup_path)
-        return backup_path
-    
-    print("ℹ️  No database found to backup")
-    return None
+from utils.update_package import ReleasePackageManager, ReleaseDownloadError, PackageExtractionError
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Update OTRS web application from GitHub')
+    parser = argparse.ArgumentParser(description='Update OTRS web application from GitHub release assets')
     parser.add_argument('--repo', required=True, help='GitHub repo in <owner>/<name> format')
-    parser.add_argument('--branch', default='main', help='Fallback branch to checkout when no target given')
-    parser.add_argument('--target', help='Git tag/branch to checkout')
+    parser.add_argument('--target', help='Git tag to deploy (defaults to latest release when omitted)')
     parser.add_argument('--working-dir', default=None, help='Project root directory (defaults to script parent)')
+    parser.add_argument('--download-dir', default=None, help='Directory to cache downloaded releases')
+    parser.add_argument('--preserve', default='.env,uploads,database_backups,logs,db/otrs_data.db',
+                        help='Comma separated relative paths that will be preserved during sync')
     parser.add_argument('--skip-deps', action='store_true', help='Skip dependency installation step')
     parser.add_argument('--pip-extra-args', default='', help='Extra args passed to pip install')
     parser.add_argument('--force-reinstall', action='store_true', help='Force reinstall even if version is the same')
     return parser.parse_args()
 
 
+def _build_preserve_list(raw_value: str):
+    return [item.strip() for item in raw_value.split(',') if item.strip()]
+
+
 def main():
     args = parse_args()
-    project_root = Path(args.working_dir or Path(__file__).resolve().parent.parent)
+    project_root = Path(args.working_dir or Path(__file__).resolve().parent.parent).resolve()
     if not project_root.exists():
         raise SystemExit(f"Project directory not found: {project_root}")
 
-    print(f"📁 Working directory: {project_root}")
+    download_dir = Path(args.download_dir or (project_root / 'instance' / 'releases')).resolve()
+    preserve_paths = _build_preserve_list(args.preserve)
 
     env = os.environ.copy()
-    github_token = env.get('GITHUB_TOKEN')
-    if github_token:
-        env['GIT_ASKPASS'] = 'echo'
-        print('🔐 Using GitHub token from environment')
+    token = env.get('GITHUB_TOKEN')
+    if token:
+        print('🔐 Using GitHub token from environment for release download')
 
-    git_dir = project_root / '.git'
-    if not git_dir.exists():
-        raise SystemExit('This script must be executed inside a git repository')
+    manager = ReleasePackageManager(
+        repo=args.repo,
+        token=token,
+        project_root=project_root,
+        download_root=download_dir,
+        preserve_paths=preserve_paths,
+    )
 
-    # 检查当前版本和目标版本
-    if args.target:
-        # 获取当前版本
-        current_version_result = subprocess.run(
-            ['git', 'describe', '--tags', '--abbrev=0'], 
-            cwd=project_root, 
-            text=True, 
-            capture_output=True
-        )
-        current_version = current_version_result.stdout.strip() if current_version_result.returncode == 0 else None
-        
-        if current_version and args.target == current_version and not args.force_reinstall:
-            print(f"ℹ️  Already on version {current_version}. Use --force-reinstall to reinstall.")
-            return 0
+    print(f"📁 Working directory: {project_root}")
+    print(f"📦 Release cache: {download_dir}")
+    if args.force_reinstall:
+        print("🔁 Force reinstall requested – proceeding without local version checks")
 
-    # 0. Create database backup before starting update
+    # 0. Backup database before update
     print("🛡️  Creating database backup...")
-    backup_file = backup_database(project_root)
-    if backup_file:
-        print(f"✅ Database backup created: {backup_file.name}")
+    database_candidates = [
+        project_root / 'db' / 'otrs_data.db',
+        project_root / 'instance' / 'otrs_web.db',
+    ]
+    backup_dir = project_root / 'database_backups'
+    backup_path = manager.backup_database(database_candidates, backup_dir)
+    if backup_path:
+        print(f"✅ Database backup created: {backup_path.name}")
     else:
-        print("ℹ️  No database found to backup")
+        print("ℹ️  No database file detected for backup")
 
-    # 1. Fetch latest refs
-    run_command(['git', 'fetch', '--tags', '--prune'], cwd=project_root, env=env)
+    # 1. Fetch release metadata
+    try:
+        metadata = manager.fetch_release_metadata(args.target)
+    except ReleaseDownloadError as exc:
+        raise SystemExit(f"❌ Fetching release metadata failed: {exc}") from exc
 
-    # 2. Ensure working tree is clean to avoid losing changes
-    status_result = subprocess.run(['git', 'status', '--porcelain'], cwd=project_root, text=True, capture_output=True)
-    if status_result.stdout.strip():
-        print('⚠️  Working tree has uncommitted changes. They will remain on disk but may block checkout.')
+    target_version = args.target or metadata.tag_name
+    print(f"🔍 Preparing to install release: {target_version}")
 
-    target_ref = args.target or args.branch
-    print(f"🔄 Checking out {target_ref}")
-    run_command(['git', 'checkout', target_ref], cwd=project_root, env=env)
+    # 2. Download archive
+    try:
+        archive_path = manager.download_release_archive(metadata, target_version)
+    except ReleaseDownloadError as exc:
+        raise SystemExit(f"❌ Downloading release archive failed: {exc}") from exc
 
-    # 3. Pull latest changes for the target reference if using branch
-    if args.target is None:
-        run_command(['git', 'pull', '--ff-only'], cwd=project_root, env=env)
+    print(f"⬇️  Downloaded archive: {archive_path}")
 
-    # 4. Install/upgrade dependencies
-    if not args.skip_deps:
-        pip_args = ['-m', 'pip', 'install', '-r', 'requirements.txt']
+    # 3. Extract archive
+    try:
+        source_root = manager.extract_archive(archive_path)
+    except PackageExtractionError as exc:
+        raise SystemExit(f"❌ Extracting release archive failed: {exc}") from exc
+
+    print(f"🗂️  Extracted release contents into: {source_root}")
+
+    # 4. Sync files into project
+    print("🔁 Synchronising release files into project directory...")
+    manager.sync_to_project(source_root)
+
+    # 5. Install dependencies
+    if args.skip_deps:
+        print("⏭️  Skipping dependency installation as requested")
+    else:
+        pip_command = [sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt']
         if args.pip_extra_args:
-            pip_args.extend(args.pip_extra_args.split())
-        print('📦 Installing dependencies')
-        run_command([sys.executable] + pip_args, cwd=project_root, env=env)
-    else:
-        print('⏭️  Skipping dependency installation')
+            pip_command.extend(args.pip_extra_args.split())
+        print("📦 Installing Python dependencies...")
+        manager.install_dependencies(pip_command, env=env)
+        print("✅ Dependencies installed")
 
-    # 5. Run optional migration scripts if present
+    # 6. Run optional migrations
     migrations = [
         project_root / 'upgrade_statistics_log_columns.py',
-        project_root / 'upgrade_database_with_new_records_count.py'
+        project_root / 'upgrade_database_with_new_records_count.py',
     ]
-    for script in migrations:
-        if script.exists():
-            print(f"🛠️  Executing migration script: {script.name}")
-            run_command([sys.executable, str(script)], cwd=project_root, env=env)
+    for script_path in migrations:
+        if script_path.exists():
+            print(f"🛠️  Running migration script: {script_path.name}")
+            manager.run_migration(script_path, env=env)
 
-    print('✅ Update completed successfully')
+    print("✅ Update completed successfully")
     return 0
 
 

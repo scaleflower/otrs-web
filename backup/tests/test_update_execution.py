@@ -64,7 +64,8 @@ def test_update_execution():
             target_version = status.get('latest_version', 'release/v1.2.6')
             print(f"✅ 目标版本: {target_version}")
             print(f"✅ 仓库配置: {app.config.get('APP_UPDATE_REPO')}")
-            print(f"✅ 分支配置: {app.config.get('APP_UPDATE_BRANCH')}")
+            print(f"✅ 下载缓存目录: {app.config.get('APP_UPDATE_DOWNLOAD_DIR', 'instance/releases')}")
+            print(f"✅ 保留路径: {app.config.get('APP_UPDATE_PRESERVE_PATHS')}")
             print("✅ 更新配置检查完成")
         except Exception as e:
             print(f"❌ 更新触发测试失败: {e}")

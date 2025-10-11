@@ -18,6 +18,11 @@ from flask import current_app
 
 from models import db, AppUpdateStatus
 from models.update_log import UpdateLog, UpdateStepLog, UpdateLogStatus, UpdateLogStep, init_update_log_models
+from utils.update_package import (
+    ReleaseDownloadError,
+    ReleasePackageManager,
+    PackageExtractionError,
+)
 
 
 class UpdateService:
@@ -221,76 +226,6 @@ class UpdateService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _run_update_job(self, target_version, force_reinstall=False):
-        with self._ensure_app_context():
-            status = AppUpdateStatus.query.first()
-            repo = self._config('APP_UPDATE_REPO')
-            branch = self._config('APP_UPDATE_BRANCH')
-            script_path = Path(self._config('APP_UPDATE_SCRIPT', 'scripts/update_app.py'))
-            
-            # 修复路径计算：使用当前工作目录
-            if not script_path.is_absolute():
-                # 使用当前工作目录作为基础路径
-                base_dir = Path.cwd()
-                script_path = (base_dir / script_path).resolve()
-
-            env = os.environ.copy()
-            token = self._config('APP_UPDATE_GITHUB_TOKEN')
-            if token:
-                env['GITHUB_TOKEN'] = token
-
-            if not script_path.exists():
-                self._finalize_failure(status, f'Update script not found: {script_path}')
-                return
-
-            command = [
-                sys.executable,
-                str(script_path),
-                f'--repo={repo}',
-                f'--branch={branch}',
-                f'--target={target_version}'
-            ]
-
-            # 添加强制重新安装参数
-            if force_reinstall:
-                command.append('--force-reinstall')
-
-            try:
-                result = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    env=env,
-                    cwd=Path.cwd(),  # 使用当前工作目录
-                    check=False,
-                )
-            except Exception as err:  # pragma: no cover (subprocess failure path)
-                self._finalize_failure(status, f'Update execution error: {err}')
-                return
-
-            if result.returncode != 0:
-                error_message = (
-                    f'Update script failed with code {result.returncode}.\n'
-                    f'STDOUT: {result.stdout}\nSTDERR: {result.stderr}'
-                )
-                self._finalize_failure(status, error_message)
-                return
-
-            # Assume success, update current version and prepare restart
-            status.current_version = target_version
-            status.status = 'restarting'
-            status.last_update_completed_at = datetime.utcnow()
-            db.session.commit()
-
-            delay = max(1, int(self._config('APP_UPDATE_RESTART_DELAY', 5) or 5))
-            self._schedule_restart(delay)
-
-    def _finalize_failure(self, status, message):
-        status.status = 'update_failed'
-        status.last_error = message[:2000]
-        status.last_update_completed_at = datetime.utcnow()
-        db.session.commit()
-
     def _record_error(self, message):
         with self._ensure_app_context():
             status = AppUpdateStatus.query.first()
@@ -481,9 +416,9 @@ class UpdateService:
         # Define update steps
         update_steps = [
             (UpdateLogStep.BACKUP_DATABASE.value, "备份数据库", 1),
-            (UpdateLogStep.FETCH_REPOSITORY.value, "获取仓库更新", 2),
-            (UpdateLogStep.CHECKOUT_VERSION.value, "检出目标版本", 3),
-            (UpdateLogStep.PULL_CHANGES.value, "拉取代码变更", 4),
+            (UpdateLogStep.FETCH_REPOSITORY.value, "获取版本元数据", 2),
+            (UpdateLogStep.CHECKOUT_VERSION.value, "下载更新包", 3),
+            (UpdateLogStep.PULL_CHANGES.value, "同步更新文件", 4),
             (UpdateLogStep.INSTALL_DEPENDENCIES.value, "安装依赖包", 5),
             (UpdateLogStep.RUN_MIGRATIONS.value, "执行数据库迁移", 6),
             (UpdateLogStep.RESTART_APPLICATION.value, "重启应用程序", 7)
@@ -537,60 +472,112 @@ class UpdateService:
     def _execute_update_with_logging(self, target_version: str, force_reinstall: bool, update_log: UpdateLog):
         """Execute update with detailed step logging"""
         repo = self._config('APP_UPDATE_REPO')
-        branch = self._config('APP_UPDATE_BRANCH')
-        script_path = Path(self._config('APP_UPDATE_SCRIPT', 'scripts/update_app.py'))
-        
-        # Fix path calculation
-        if not script_path.is_absolute():
-            base_dir = Path.cwd()
-            script_path = (base_dir / script_path).resolve()
-
-        env = os.environ.copy()
+        project_root = Path.cwd()
+        download_dir = self._resolve_download_dir(project_root)
+        preserve_paths = self._resolve_preserve_paths()
         token = self._config('APP_UPDATE_GITHUB_TOKEN')
+        env = os.environ.copy()
         if token:
             env['GITHUB_TOKEN'] = token
 
-        if not script_path.exists():
-            self._finalize_failure_with_logging(update_log, f'Update script not found: {script_path}')
-            return
-
-        command = [
-            sys.executable,
-            str(script_path),
-            f'--repo={repo}',
-            f'--branch={branch}',
-            f'--target={target_version}'
-        ]
-
-        if force_reinstall:
-            command.append('--force-reinstall')
+        manager = ReleasePackageManager(
+            repo=repo,
+            token=token,
+            project_root=project_root,
+            download_root=download_dir,
+            preserve_paths=preserve_paths,
+        )
 
         try:
-            # Update step: backup_database
-            self._update_step_status(update_log, UpdateLogStep.BACKUP_DATABASE.value, "开始备份数据库...")
-            
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                env=env,
-                cwd=Path.cwd(),
-                check=False,
-            )
-            
-            # Process result
-            if result.returncode != 0:
-                error_message = (
-                    f'Update script failed with code {result.returncode}.\n'
-                    f'STDOUT: {result.stdout}\nSTDERR: {result.stderr}'
-                )
-                self._finalize_failure_with_logging(update_log, error_message)
-                return
+            # Step 1: backup database
+            backup_candidates = [
+                project_root / 'db' / 'otrs_data.db',
+                project_root / 'instance' / 'otrs_web.db',
+            ]
+            backup_dir = project_root / (self._config('BACKUP_FOLDER', 'database_backups') or 'database_backups')
+            backup_path = manager.backup_database(backup_candidates, backup_dir)
+            backup_message = f'数据库备份完成: {backup_path.name}' if backup_path else '未检测到数据库文件，跳过备份'
+            self._update_step_status(update_log, UpdateLogStep.BACKUP_DATABASE.value, backup_message)
 
-            # Update successful
-            self._finalize_success_with_logging(update_log, target_version)
-            
-        except Exception as err:
+            # Step 2: fetch release metadata
+            metadata = manager.fetch_release_metadata(target_version)
+            resolved_target = metadata.tag_name or target_version
+            if resolved_target and update_log.target_version != resolved_target:
+                update_log.target_version = resolved_target
+                db.session.commit()
+            status = AppUpdateStatus.query.first()
+            if status:
+                status.latest_version = metadata.tag_name or resolved_target
+                status.release_name = metadata.name
+                status.release_body = metadata.body
+                status.release_url = metadata.html_url
+                status.published_at = self._parse_datetime(metadata.published_at)
+                db.session.commit()
+            self._update_step_status(
+                update_log,
+                UpdateLogStep.FETCH_REPOSITORY.value,
+                f'获取版本元数据成功: {resolved_target}',
+            )
+
+            # Step 3: download archive
+            archive_path = manager.download_release_archive(metadata, resolved_target)
+            self._update_step_status(
+                update_log,
+                UpdateLogStep.CHECKOUT_VERSION.value,
+                f'下载更新包成功: {archive_path.name}',
+            )
+
+            # Step 4: extract and sync files
+            source_root = manager.extract_archive(archive_path)
+            manager.sync_to_project(source_root)
+            self._update_step_status(
+                update_log,
+                UpdateLogStep.PULL_CHANGES.value,
+                '更新包解压并同步到项目目录完成',
+            )
+
+            # Step 5: install dependencies (optional)
+            install_deps = self._config_bool('APP_UPDATE_INSTALL_DEPENDENCIES', default=True)
+            if install_deps:
+                pip_command = [sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt']
+                extra_args = self._config('APP_UPDATE_PIP_ARGS')
+                if extra_args:
+                    pip_command.extend(extra_args.split())
+                manager.install_dependencies(pip_command, env=env)
+                deps_message = '依赖安装完成'
+            else:
+                deps_message = '根据配置跳过依赖安装'
+            self._update_step_status(
+                update_log,
+                UpdateLogStep.INSTALL_DEPENDENCIES.value,
+                deps_message,
+            )
+
+            # Step 6: run migrations (optional)
+            run_migrations = self._config_bool('APP_UPDATE_RUN_MIGRATIONS', default=True)
+            migration_outputs = []
+            if run_migrations:
+                migration_scripts = self._resolve_migration_scripts(project_root)
+                for script_path in migration_scripts:
+                    if script_path.exists():
+                        manager.run_migration(script_path, env=env)
+                        migration_outputs.append(f'执行迁移脚本: {script_path.name}')
+                if not migration_outputs:
+                    migration_outputs.append('未发现迁移脚本')
+            else:
+                migration_outputs.append('根据配置跳过迁移')
+            self._update_step_status(
+                update_log,
+                UpdateLogStep.RUN_MIGRATIONS.value,
+                '; '.join(migration_outputs),
+            )
+
+            # Finalize
+            self._finalize_success_with_logging(update_log, resolved_target)
+
+        except (ReleaseDownloadError, PackageExtractionError, RuntimeError) as err:
+            self._finalize_failure_with_logging(update_log, str(err))
+        except Exception as err:  # pragma: no cover - unexpected error path
             self._finalize_failure_with_logging(update_log, f'Update execution error: {err}')
 
     def _update_step_status(self, update_log: UpdateLog, step_name: str, output: str = None):
@@ -606,6 +593,55 @@ class UpdateService:
             db.session.commit()
             print(f"✅ Step completed: {step_name}")
 
+    def _resolve_download_dir(self, project_root: Path) -> Path:
+        """Resolve download directory from configuration"""
+        raw_path = self._config('APP_UPDATE_DOWNLOAD_DIR')
+        if not raw_path:
+            return (project_root / 'instance' / 'releases').resolve()
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = project_root / candidate
+        return candidate.resolve()
+
+    def _resolve_preserve_paths(self) -> List[str]:
+        """Load preserve paths list from configuration"""
+        raw = self._config('APP_UPDATE_PRESERVE_PATHS', '.env,uploads,database_backups,logs,db/otrs_data.db')
+        if isinstance(raw, (list, tuple)):
+            return [str(item).strip() for item in raw if str(item).strip()]
+        if not raw:
+            return []
+        return [segment.strip() for segment in str(raw).split(',') if segment.strip()]
+
+    def _resolve_migration_scripts(self, project_root: Path) -> List[Path]:
+        """Determine migration scripts to execute after update"""
+        raw = self._config('APP_UPDATE_MIGRATION_SCRIPTS')
+        scripts: List[Path] = []
+        if raw:
+            candidates = raw if isinstance(raw, (list, tuple)) else str(raw).split(',')
+            for entry in candidates:
+                entry_str = str(entry).strip()
+                if not entry_str:
+                    continue
+                path = Path(entry_str)
+                if not path.is_absolute():
+                    path = project_root / path
+                scripts.append(path)
+        else:
+            scripts = [
+                project_root / 'upgrade_statistics_log_columns.py',
+                project_root / 'upgrade_database_with_new_records_count.py'
+            ]
+        return scripts
+
+    def _config_bool(self, key: str, default: bool = False) -> bool:
+        """Helper to read boolean configuration values"""
+        value = self._config(key)
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
     def _finalize_success_with_logging(self, update_log: UpdateLog, target_version: str):
         """Finalize successful update with logging"""
         # Update AppUpdateStatus
@@ -614,6 +650,12 @@ class UpdateService:
             status.current_version = target_version
             status.status = 'restarting'
             status.last_update_completed_at = datetime.utcnow()
+        
+        self._update_step_status(
+            update_log,
+            UpdateLogStep.RESTART_APPLICATION.value,
+            '已计划应用重启',
+        )
         
         # Update log
         update_log.mark_completed()
