@@ -1,0 +1,73 @@
+name: OTRS Web Application CI/CD
+
+on:
+  push:
+    branches: [ master, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  IMAGE_NAME: otrs-web-app
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+
+jobs:
+  build-and-test:
+    runs-on: flow-zq
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Log in to Alibaba Cloud Container Registry
+      uses: aliyun/acr-login@v1
+      with:
+        login-server: ${{ env.REGISTRY }}
+        username: ${{ secrets.ACR_USERNAME }}
+        password: ${{ secrets.ACR_PASSWORD }}
+
+    - name: Extract metadata (tags, labels)
+      id: meta
+      uses: docker/metadata-action@v4
+      with:
+        images: ${{ env.REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha,prefix={{branch}}-
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Run tests
+      run: |
+        docker build -t ${{ env.IMAGE_NAME }}-test .
+        # 这里可以添加测试命令
+        echo "Tests completed"
+
+  deploy:
+    needs: build-and-test
+    runs-on: flow-zq
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Deploy to production
+      run: |
+        echo "Deploying ${{ env.IMAGE_NAME }} to production environment"
+        # 这里添加部署到服务器的命令
+        # 例如：使用阿里云容器服务部署
+        echo "Deployment completed"

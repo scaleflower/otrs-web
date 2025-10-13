@@ -95,9 +95,6 @@ def require_admin_password(f):
             session['admin_authenticated'] = True
             session['admin_auth_time'] = datetime.utcnow().isoformat()
             return f(*args, **kwargs)
-        elif request.method == 'POST' and password:
-            # Password was provided but is incorrect
-            flash('密码错误，请重试', 'error')
         
         # Return admin password form
         if request.is_json:
