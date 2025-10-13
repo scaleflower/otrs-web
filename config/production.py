@@ -11,8 +11,21 @@ class ProductionConfig(BaseConfig):
     DEBUG = False
     TESTING = False
     
-    # Database settings
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///db/otrs_data.db'
+    # Database settings - support both SQLite and PostgreSQL
+    DATABASE_TYPE = os.environ.get('DATABASE_TYPE', 'sqlite').lower()
+    
+    if DATABASE_TYPE == 'postgresql':
+        # PostgreSQL configuration
+        DB_HOST = os.environ.get('DB_HOST', 'localhost')
+        DB_PORT = os.environ.get('DB_PORT', '5432')
+        DB_NAME = os.environ.get('DB_NAME', 'otrs_db')
+        DB_USER = os.environ.get('DB_USER', 'otrs_user')
+        DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
+        SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+    else:
+        # SQLite configuration (default)
+        SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///db/otrs_data.db'
+    
     SQLALCHEMY_ECHO = False  # Disable SQL query logging in production
     
     # Enhanced database settings for production
@@ -62,6 +75,7 @@ class ProductionConfig(BaseConfig):
         
         # Production specific initialization
         print("🔒 Running in PRODUCTION mode")
+        print(f"🗄️  Using database type: {cls.DATABASE_TYPE}")
         
         # Set up error logging via email
         if cls.MAIL_SERVER:

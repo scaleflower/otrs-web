@@ -5,42 +5,43 @@ services:
     build: .
     container_name: otrs-web-app
     ports:
-      - "5000:5000"
+      - "15001:15001"
     environment:
       - FLASK_ENV=production
       - PYTHONUNBUFFERED=1
+      - PORT=15001
+      - DATABASE_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=otrs_db
+      - DB_USER=otrs_user
+      - DB_PASSWORD=otrs_password
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./database_backups:/app/database_backups
+      - ./db:/app/db
     restart: unless-stopped
+    depends_on:
+      - postgres
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      test: ["CMD", "curl", "-f", "http://localhost:15001"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  # 如果需要数据库支持，可以添加以下服务
-  # redis:
-  #   image: redis:alpine
-  #   ports:
-  #     - "6379:6379"
-  #   volumes:
-  #     - redis_data:/data
-  #   restart: unless-stopped
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: otrs_db
+      POSTGRES_USER: otrs_user
+      POSTGRES_PASSWORD: otrs_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
 
-  # postgres:
-  #   image: postgres:13
-  #   environment:
-  #     POSTGRES_DB: otrs_db
-  #     POSTGRES_USER: otrs_user
-  #     POSTGRES_PASSWORD: otrs_password
-  #   ports:
-  #     - "5432:5432"
-  #   volumes:
-  #     - postgres_data:/var/lib/postgresql/data
-  #   restart: unless-stopped
-
-# volumes:
-#   redis_data:
-#   postgres_data:
+volumes:
+  postgres_data:

@@ -13,11 +13,24 @@ class BaseConfig:
     APP_VERSION = "1.2.3"
     
     # Database settings
+    # 支持SQLite（默认）和PostgreSQL
+    # SQLite: sqlite:///path/to/database.db
+    # PostgreSQL: postgresql://user:password@host:port/database
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
+                            os.environ.get('SQLALCHEMY_DATABASE_URI') or \
+                            'sqlite:///' + os.path.join(os.getcwd(), 'db', 'otrs_data.db')
+    
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = False  # Disable SQL query logging for better performance
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
         'pool_recycle': 300,
+        # PostgreSQL specific options
+        'pool_size': 10,
+        'max_overflow': 20,
+        'connect_args': {
+            'connect_timeout': 10,
+        }
     }
     
     # Upload settings
