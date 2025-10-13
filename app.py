@@ -27,6 +27,7 @@ from blueprints.daily_stats_bp import daily_stats_bp
 from blueprints.backup_bp import backup_bp
 from blueprints.update_bp import update_bp
 from blueprints.admin_bp import admin_bp
+from blueprints.init_bp import init_bp
 
 # Import services after app initialization to avoid circular imports
 from services import (
@@ -62,6 +63,7 @@ app.register_blueprint(daily_stats_bp)
 app.register_blueprint(backup_bp)
 app.register_blueprint(update_bp)
 app.register_blueprint(admin_bp)
+app.register_blueprint(init_bp)
 
 # Perform an initial update check so clients know the latest version
 if app.config.get('APP_UPDATE_ENABLED', True):
@@ -76,6 +78,12 @@ APP_VERSION = app.config.get('APP_VERSION', '1.2.3')
 @app.route('/')
 def index():
     """Main page"""
+    # Check if system is initialized
+    from models import SystemConfig
+    initialized = SystemConfig.query.filter_by(key='system_initialized').first()
+    if not initialized or initialized.value != 'true':
+        return redirect(url_for('init_bp.init_welcome'))
+    
     return render_template('index.html', APP_VERSION=APP_VERSION)
 
 @app.route('/uploads')
