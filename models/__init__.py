@@ -62,13 +62,30 @@ def _is_database_empty():
         return True
 
 
+def _tables_exist():
+    """Check if the required tables already exist in the database"""
+    try:
+        inspector = inspect(db.engine)
+        existing_tables = set(inspector.get_table_names())
+        required_tables = {
+            'otrs_ticket', 'upload_detail', 'statistic', 'daily_statistics',
+            'statistics_config', 'statistics_log', 'responsible_config',
+            'database_log', 'app_update_status', 'update_log', 'update_step_log',
+            'system_config'
+        }
+        return required_tables.issubset(existing_tables)
+    except Exception:
+        # If any error occurs, assume tables don't exist
+        return False
+
+
 def init_db(app):
     """Initialize database with Flask app"""
     db.init_app(app)
     
     with app.app_context():
-        # Check if database is empty before attempting to create tables
-        if _is_database_empty():
+        # Check if all required tables exist before attempting to create tables
+        if not _tables_exist():
             print("🔧 Creating database tables...")
             # Create all tables
             db.create_all()
@@ -100,7 +117,7 @@ def init_db(app):
             
             print("✓ Database initialized successfully")
         else:
-            print("📋 Database already initialized, skipping creation...")
+            print("📋 Database tables already exist, skipping creation...")
             # Still ensure schema updates for upload_detail table
             _ensure_upload_detail_schema()
             
