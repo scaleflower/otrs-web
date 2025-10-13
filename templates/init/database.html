@@ -152,12 +152,12 @@
             text-align: center;
             text-decoration: none;
             transition: all 0.3s ease;
+            border: none;
         }
 
         .btn-primary {
             background: #667eea;
             color: white;
-            border: none;
         }
 
         .btn-primary:hover {
@@ -172,6 +172,24 @@
 
         .btn-secondary:hover {
             background: #e9ecef;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .btn-info:hover {
+            background: #138496;
         }
 
         .alert {
@@ -191,6 +209,51 @@
             background: #d4edda;
             color: #155724;
             border: 1px solid #c3e6cb;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .test-connection-btn {
+            margin-top: 10px;
+        }
+
+        .init-process {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .init-step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .init-step-icon {
+            margin-right: 10px;
+            font-size: 1.2rem;
+        }
+
+        .init-step-pending .init-step-icon {
+            color: #ffc107;
+        }
+
+        .init-step-success .init-step-icon {
+            color: #28a745;
+        }
+
+        .init-step-error .init-step-icon {
+            color: #dc3545;
+        }
+
+        .init-step-text {
+            flex: 1;
         }
     </style>
 </head>
@@ -221,6 +284,7 @@
         
         <div id="errorAlert" class="alert alert-error"></div>
         <div id="successAlert" class="alert alert-success"></div>
+        <div id="infoAlert" class="alert alert-info"></div>
         
         <form id="databaseForm">
             <div class="form-group">
@@ -286,11 +350,40 @@
                 </div>
             </div>
             
+            <button type="button" id="testConnectionBtn" class="btn btn-info test-connection-btn">
+                <i class="fas fa-plug"></i> 测试连接
+            </button>
+            
+            <div id="initProcess" class="init-process">
+                <h4>数据库初始化过程:</h4>
+                <div class="init-step init-step-pending" id="stepConnection">
+                    <div class="init-step-icon">
+                        <i class="fas fa-circle-notch fa-spin"></i>
+                    </div>
+                    <div class="init-step-text">连接到数据库...</div>
+                </div>
+                <div class="init-step init-step-pending" id="stepTables">
+                    <div class="init-step-icon">
+                        <i class="fas fa-circle-notch fa-spin"></i>
+                    </div>
+                    <div class="init-step-text">创建表结构...</div>
+                </div>
+                <div class="init-step init-step-pending" id="stepComplete">
+                    <div class="init-step-icon">
+                        <i class="fas fa-circle-notch fa-spin"></i>
+                    </div>
+                    <div class="init-step-text">完成初始化...</div>
+                </div>
+            </div>
+            
             <div class="btn-group">
                 <a href="{{ url_for('init_bp.init_welcome') }}" class="btn btn-secondary">
                     <i class="fas fa-arrow-left"></i> 上一步
                 </a>
-                <button type="submit" class="btn btn-primary">
+                <button type="button" id="initDatabaseBtn" class="btn btn-success" disabled>
+                    初始化数据库 <i class="fas fa-cogs"></i>
+                </button>
+                <button type="button" id="nextStepBtn" class="btn btn-primary" style="display: none;">
                     下一步 <i class="fas fa-arrow-right"></i>
                 </button>
             </div>
@@ -316,22 +409,84 @@
             }
         });
         
-        // Form submission handler
-        document.getElementById('databaseForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
+        // Test connection handler
+        document.getElementById('testConnectionBtn').addEventListener('click', function() {
             // Hide alerts
             document.getElementById('errorAlert').style.display = 'none';
             document.getElementById('successAlert').style.display = 'none';
+            document.getElementById('infoAlert').style.display = 'none';
             
             // Get form data
-            const formData = new FormData(this);
+            const formData = new FormData(document.getElementById('databaseForm'));
             const data = {};
             formData.forEach((value, key) => {
                 data[key] = value;
             });
             
+            // Show testing message
+            document.getElementById('infoAlert').textContent = '正在测试数据库连接...';
+            document.getElementById('infoAlert').style.display = 'block';
+            
             // Send request
+            fetch('/init/api/database/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                document.getElementById('infoAlert').style.display = 'none';
+                if (result.success) {
+                    document.getElementById('successAlert').textContent = result.message;
+                    document.getElementById('successAlert').style.display = 'block';
+                    // Enable initialize button
+                    document.getElementById('initDatabaseBtn').disabled = false;
+                } else {
+                    document.getElementById('errorAlert').textContent = result.error || '连接测试失败';
+                    document.getElementById('errorAlert').style.display = 'block';
+                    // Disable initialize button
+                    document.getElementById('initDatabaseBtn').disabled = true;
+                }
+            })
+            .catch(error => {
+                document.getElementById('infoAlert').style.display = 'none';
+                document.getElementById('errorAlert').textContent = '网络错误：' + error.message;
+                document.getElementById('errorAlert').style.display = 'block';
+                // Disable initialize button
+                document.getElementById('initDatabaseBtn').disabled = true;
+            });
+        });
+        
+        // Initialize database handler
+        document.getElementById('initDatabaseBtn').addEventListener('click', function() {
+            // Hide alerts
+            document.getElementById('errorAlert').style.display = 'none';
+            document.getElementById('successAlert').style.display = 'none';
+            document.getElementById('infoAlert').style.display = 'none';
+            
+            // Get form data
+            const formData = new FormData(document.getElementById('databaseForm'));
+            const data = {};
+            formData.forEach((value, key) => {
+                data[key] = value;
+            });
+            
+            // Show initialization process
+            document.getElementById('initProcess').style.display = 'block';
+            
+            // Reset step icons
+            document.querySelectorAll('.init-step').forEach(step => {
+                step.className = 'init-step init-step-pending';
+                step.querySelector('.init-step-icon').innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+            });
+            
+            // Step 1: Connection test
+            document.getElementById('stepConnection').className = 'init-step init-step-success';
+            document.getElementById('stepConnection').querySelector('.init-step-icon').innerHTML = '<i class="fas fa-check-circle"></i>';
+            
+            // Send request to save configuration and initialize database
             fetch('/init/api/database', {
                 method: 'POST',
                 headers: {
@@ -342,20 +497,42 @@
             .then(response => response.json())
             .then(result => {
                 if (result.success) {
-                    document.getElementById('successAlert').textContent = '数据库配置保存成功！';
+                    // Step 2: Tables creation
+                    document.getElementById('stepTables').className = 'init-step init-step-success';
+                    document.getElementById('stepTables').querySelector('.init-step-icon').innerHTML = '<i class="fas fa-check-circle"></i>';
+                    
+                    // Step 3: Complete
+                    document.getElementById('stepComplete').className = 'init-step init-step-success';
+                    document.getElementById('stepComplete').querySelector('.init-step-icon').innerHTML = '<i class="fas fa-check-circle"></i>';
+                    
+                    // Show success message
+                    document.getElementById('successAlert').textContent = result.message;
                     document.getElementById('successAlert').style.display = 'block';
-                    setTimeout(() => {
-                        window.location.href = '/init/admin';
-                    }, 1500);
+                    
+                    // Show next step button
+                    document.getElementById('initDatabaseBtn').style.display = 'none';
+                    document.getElementById('nextStepBtn').style.display = 'block';
                 } else {
-                    document.getElementById('errorAlert').textContent = result.error || '配置保存失败';
+                    // Show error
+                    document.getElementById('stepTables').className = 'init-step init-step-error';
+                    document.getElementById('stepTables').querySelector('.init-step-icon').innerHTML = '<i class="fas fa-times-circle"></i>';
+                    
+                    document.getElementById('errorAlert').textContent = result.error || '数据库初始化失败';
                     document.getElementById('errorAlert').style.display = 'block';
                 }
             })
             .catch(error => {
+                document.getElementById('stepTables').className = 'init-step init-step-error';
+                document.getElementById('stepTables').querySelector('.init-step-icon').innerHTML = '<i class="fas fa-times-circle"></i>';
+                
                 document.getElementById('errorAlert').textContent = '网络错误：' + error.message;
                 document.getElementById('errorAlert').style.display = 'block';
             });
+        });
+        
+        // Next step handler
+        document.getElementById('nextStepBtn').addEventListener('click', function() {
+            window.location.href = '/init/admin';
         });
     </script>
 </body>
