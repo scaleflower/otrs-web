@@ -1,7 +1,14 @@
 """
-OTRS Ticket Analysis Web Application - Refactored
-Flask-based ticket data analysis web application with modular architecture
+Main application file for OTRS Web Application
 """
+
+import os
+import glob
+from datetime import datetime
+from urllib.parse import quote_plus
+from flask import Flask, render_template, jsonify, request, redirect, url_for, send_file, abort
+from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Removed .env file loading to avoid committing sensitive information to GitHub
 
