@@ -59,7 +59,23 @@ class TicketService:
             update_processing_status(2, 'Reading Excel file', 'Loading data into memory...')
             # Reset file pointer to beginning after saving
             file.seek(0)
-            df = pd.read_excel(file)
+            
+            # Try to read Excel file with different engines and options to handle various Excel issues
+            try:
+                df = pd.read_excel(file)
+            except ValueError as e:
+                if "match pattern" in str(e).lower():
+                    # This error often occurs when Excel file has filters or other formatting issues
+                    # Try with openpyxl engine explicitly
+                    file.seek(0)
+                    df = pd.read_excel(file, engine='openpyxl')
+                else:
+                    raise e
+            except Exception as e:
+                # Try with xlrd engine for older Excel files
+                file.seek(0)
+                df = pd.read_excel(file, engine='xlrd')
+            
             total_records = len(df)
             update_processing_status(2, 'Excel file read completed', f'Found {total_records} records in total')
             
