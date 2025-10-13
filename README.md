@@ -75,6 +75,32 @@ PostgreSQL相关配置：
 - `DB_USER`: 数据库用户名
 - `DB_PASSWORD`: 数据库密码
 
+## 数据库初始化
+
+### 使用Docker（推荐）
+
+当使用Docker运行应用时，数据库会在应用启动时自动初始化。
+
+### 手动初始化数据库
+
+如果需要手动初始化数据库（特别是PostgreSQL），可以使用以下方法：
+
+#### 方法1：使用Flask Shell
+```bash
+flask shell
+>>> from app import app
+>>> from models import init_db
+>>> with app.app_context():
+...     init_db(app)
+```
+
+#### 方法2：运行初始化脚本
+```bash
+python init_postgres_db.py
+```
+
+该脚本会根据环境变量配置连接到相应的数据库并创建所有必要的表。
+
 ## 目录结构
 
 - `uploads/`: 上传的Excel文件存储目录
