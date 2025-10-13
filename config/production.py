@@ -22,19 +22,28 @@ class ProductionConfig(BaseConfig):
         DB_USER = os.environ.get('DB_USER', 'otrs_user')
         DB_PASSWORD = os.environ.get('DB_PASSWORD', '')
         SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+        
+        # PostgreSQL specific engine options
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_pre_ping': True,
+            'pool_recycle': 3600,  # Longer recycle time for production
+            'pool_size': 10,
+            'max_overflow': 20,
+            'connect_args': {
+                'connect_timeout': 10,
+            }
+        }
     else:
         # SQLite configuration (default)
         SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///db/otrs_data.db'
+        
+        # SQLite specific engine options
+        SQLALCHEMY_ENGINE_OPTIONS = {
+            'pool_pre_ping': True,
+            'pool_recycle': 3600,  # Longer recycle time for production
+        }
     
     SQLALCHEMY_ECHO = False  # Disable SQL query logging in production
-    
-    # Enhanced database settings for production
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_pre_ping': True,
-        'pool_recycle': 3600,  # Longer recycle time for production
-        'pool_size': 10,
-        'max_overflow': 20,
-    }
     
     # Logging settings
     LOG_LEVEL = 'WARNING'

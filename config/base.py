@@ -25,12 +25,6 @@ class BaseConfig:
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
         'pool_recycle': 300,
-        # PostgreSQL specific options
-        'pool_size': 10,
-        'max_overflow': 20,
-        'connect_args': {
-            'connect_timeout': 10,
-        }
     }
     
     # Upload settings
