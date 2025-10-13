@@ -62,18 +62,20 @@ def api_test_database():
             db_path = data.get('db_path', 'db/otrs_data.db')
             db_uri = f'sqlite:///{db_path}'
         elif db_type == 'postgresql':
-            host = data.get('db_host', 'localhost')
-            port = data.get('db_port', '5432')
-            name = data.get('db_name', 'otrs_db')
-            user = data.get('db_user', 'otrs_user')
-            password = data.get('db_password', '')
+            # Use PostgreSQL-specific field names to avoid conflicts
+            host = data.get('pg_host', 'localhost')
+            port = data.get('pg_port', '5432')  # 使用从请求中获取的端口
+            name = data.get('pg_name', 'otrs_db')
+            user = data.get('pg_user', 'otrs_user')
+            password = data.get('pg_password', '')
             db_uri = f'postgresql://{user}:{password}@{host}:{port}/{name}'
         elif db_type == 'mysql':
-            host = data.get('db_host', 'localhost')
-            port = data.get('db_port', '3306')
-            name = data.get('db_name', 'otrs_db')
-            user = data.get('db_user', 'otrs_user')
-            password = data.get('db_password', '')
+            # Use MySQL-specific field names to avoid conflicts
+            host = data.get('mysql_host', 'localhost')
+            port = data.get('mysql_port', '3306')  # MySQL默认端口
+            name = data.get('mysql_name', 'otrs_db')
+            user = data.get('mysql_user', 'otrs_user')
+            password = data.get('mysql_password', '')
             db_uri = f'mysql://{user}:{password}@{host}:{port}/{name}'
         
         # Test connection
@@ -98,18 +100,20 @@ def api_configure_database():
             db_path = data.get('db_path', 'db/otrs_data.db')
             db_uri = f'sqlite:///{db_path}'
         elif db_type == 'postgresql':
-            host = data.get('db_host', 'localhost')
-            port = data.get('db_port', '5432')
-            name = data.get('db_name', 'otrs_db')
-            user = data.get('db_user', 'otrs_user')
-            password = data.get('db_password', '')
+            # Use PostgreSQL-specific field names to avoid conflicts
+            host = data.get('pg_host', 'localhost')
+            port = data.get('pg_port', '5432')
+            name = data.get('pg_name', 'otrs_db')
+            user = data.get('pg_user', 'otrs_user')
+            password = data.get('pg_password', '')
             db_uri = f'postgresql://{user}:{password}@{host}:{port}/{name}'
         elif db_type == 'mysql':
-            host = data.get('db_host', 'localhost')
-            port = data.get('db_port', '3306')
-            name = data.get('db_name', 'otrs_db')
-            user = data.get('db_user', 'otrs_user')
-            password = data.get('db_password', '')
+            # Use MySQL-specific field names to avoid conflicts
+            host = data.get('mysql_host', 'localhost')
+            port = data.get('mysql_port', '3306')
+            name = data.get('mysql_name', 'otrs_db')
+            user = data.get('mysql_user', 'otrs_user')
+            password = data.get('mysql_password', '')
             db_uri = f'mysql://{user}:{password}@{host}:{port}/{name}'
         
         # Test connection first

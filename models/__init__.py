@@ -79,17 +79,39 @@ def _tables_exist():
         return False
 
 
+def _create_missing_tables():
+    """Create missing tables if any"""
+    try:
+        inspector = inspect(db.engine)
+        existing_tables = set(inspector.get_table_names())
+        required_tables = {
+            'otrs_ticket', 'upload_detail', 'statistic', 'daily_statistics',
+            'statistics_config', 'statistics_log', 'responsible_config',
+            'database_log', 'app_update_status', 'update_log', 'update_step_log',
+            'system_config'
+        }
+        missing_tables = required_tables - existing_tables
+        
+        if missing_tables:
+            print(f"🔧 Creating missing tables: {missing_tables}")
+            # Create all tables (SQLAlchemy will skip existing ones)
+            db.create_all()
+            return True
+        else:
+            print("📋 All required tables already exist")
+            return False
+    except Exception as e:
+        print(f"❌ Error checking/creating tables: {e}")
+        return False
+
+
 def init_db(app):
     """Initialize database with Flask app"""
     db.init_app(app)
     
     with app.app_context():
-        # Check if all required tables exist before attempting to create tables
-        if not _tables_exist():
-            print("🔧 Creating database tables...")
-            # Create all tables
-            db.create_all()
-            
+        # Try to create missing tables instead of skipping all if some exist
+        if _create_missing_tables():
             # Initialize update log models
             init_update_log_models(app)
             
