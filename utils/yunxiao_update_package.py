@@ -21,6 +21,9 @@ from datetime import datetime
 
 import requests
 
+# Import the shared archive validation utility
+from .archive_utils import validate_members, ArchiveValidationError
+
 
 class YunxiaoReleaseDownloadError(RuntimeError):
     """Raised when release metadata or package download fails from Yunxiao."""
@@ -71,7 +74,7 @@ class YunxiaoReleaseMetadata:
 
 
 class YunxiaoReleasePackageManager:
-    """Handle HTTP based release lookups and filesystem synchronisation for Yunxiao."""
+    """Handle Yunxiao release lookups and filesystem synchronisation."""
 
     USER_AGENT = "otrs-web-yunxiao-update-agent"
 
@@ -94,56 +97,15 @@ class YunxiaoReleasePackageManager:
         self.preserve_paths = tuple(preserve_paths or ())
         self._session = session or requests.Session()
         self._timeout = timeout
-        self.use_ssh = use_ssh  # 是否使用SSH方式
+        self.use_ssh = use_ssh
 
     # ------------------------------------------------------------------
     # Release metadata & download
     # ------------------------------------------------------------------
-    def fetch_release_metadata(self, target_version: Optional[str]) -> YunxiaoReleaseMetadata:
-        """Retrieve release metadata from Yunxiao for the target version."""
-        # 如果使用SSH方式，则跳过HTTP API调用
-        if self.use_ssh:
-            # SSH方式下，我们通过git命令获取最新tag
-            try:
-                # 获取最新的tag
-                if target_version:
-                    tag = target_version
-                else:
-                    # 获取最新的tag
-                    result = subprocess.run(
-                        ['git', 'ls-remote', '--tags', f'git@codeup.aliyun.com:{self.repo}.git'],
-                        capture_output=True,
-                        text=True,
-                        cwd=self.project_root
-                    )
-                    if result.returncode != 0:
-                        raise YunxiaoReleaseDownloadError(f"Failed to list remote tags: {result.stderr}")
-                    
-                    # 解析tags输出，获取最新的tag
-                    tags = result.stdout.strip().split('\n')
-                    if not tags or tags == ['']:
-                        raise YunxiaoReleaseDownloadError("No tags found in repository")
-                    
-                    # 简单地获取最后一个tag（实际项目中可能需要更复杂的版本比较）
-                    tag = tags[-1].split('/')[-1] if '/' in tags[-1] else tags[-1].split()[-1]
-                
-                return YunxiaoReleaseMetadata(
-                    tag_name=tag,
-                    name=f"Release {tag}",
-                    body=f"Release {tag} from Yunxiao",
-                    html_url=f"https://codeup.aliyun.com/{self.repo}/tags/{tag}",
-                    published_at=datetime.now().isoformat(),
-                    tarball_url=None,  # SSH模式下不使用tarball
-                    zipball_url=None   # SSH模式下不使用zipball
-                )
-            except Exception as e:
-                raise YunxiaoReleaseDownloadError(f"Failed to fetch release metadata via SSH: {e}")
 
-        # HTTP API方式
-        headers = {
-            "User-Agent": self.USER_AGENT,
-        }
-        
+    def fetch_release_metadata(self, target_version: Optional[str] = None) -> YunxiaoReleaseMetadata:
+        """Look up Yunxiao release metadata for a target or latest version."""
+        headers = {"User-Agent": self.USER_AGENT}
         # 只有在token有效时才添加到请求头
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -194,9 +156,11 @@ class YunxiaoReleasePackageManager:
             raise YunxiaoReleaseDownloadError("Release metadata does not contain a download URL")
 
         archive_ext = ".tar.gz" if metadata.tarball_url else ".zip"
-        archive_dir = self.download_root / target_version
+        target_parts = [part for part in target_version.replace('\\', '/').split('/') if part]
+        archive_dir = self.download_root.joinpath(*target_parts)
         archive_dir.mkdir(parents=True, exist_ok=True)
-        archive_path = archive_dir / f"{target_version}{archive_ext}"
+        safe_filename = "_".join(target_parts) if target_parts else target_version.replace('/', '_')
+        archive_path = archive_dir / f"{safe_filename}{archive_ext}"
 
         print(f"⬇️  Downloading release archive from Yunxiao: {download_url}")
         print(f"📂 Saving to: {archive_path}")
@@ -244,9 +208,11 @@ class YunxiaoReleasePackageManager:
                 raise YunxiaoReleaseDownloadError(f"Failed to clone repository: {result.stderr}")
             
             # 创建tar.gz归档文件
-            archive_dir = self.download_root / target_version
+            target_parts = [part for part in target_version.replace('\\', '/').split('/') if part]
+            archive_dir = self.download_root.joinpath(*target_parts)
             archive_dir.mkdir(parents=True, exist_ok=True)
-            archive_path = archive_dir / f"{target_version}.tar.gz"
+            safe_filename = "_".join(target_parts) if target_parts else target_version.replace('/', '_')
+            archive_path = archive_dir / f"{safe_filename}.tar.gz"
             
             print(f"📦 Creating archive: {archive_path}")
             # 创建归档
@@ -273,11 +239,11 @@ class YunxiaoReleasePackageManager:
         print(f"📦 Extracting archive: {archive_path}")
 
         if archive_path.suffixes[-2:] == [".tar", ".gz"]:
-            opener, mode = tarfile.open, "r:gz"
+            opener, mode, is_tar = tarfile.open, "r:gz", True
         elif archive_path.suffix == ".zip":
             # Delayed import since zipfile is unused with tarball releases
             import zipfile
-            opener, mode = zipfile.ZipFile, "r"
+            opener, mode, is_tar = zipfile.ZipFile, "r", False
         else:
             raise YunxiaoPackageExtractionError(f"Unsupported archive format: {archive_path}")
 
@@ -286,36 +252,62 @@ class YunxiaoReleasePackageManager:
             with opener(archive_path, mode) as handle:
                 print(f"📂 Extracting to temporary directory: {temp_dir}")
                 # 修复tarfile.extractall安全问题
-                if mode == "r:gz":
+                if is_tar:
                     members = handle.getmembers()
-                    # 验证成员安全性
-                    for member in members:
+                    safe_members = validate_members(members, temp_dir)
+                    # 手动提取tar成员以增强安全性
+                    for member in safe_members:
                         member_path = temp_dir / member.name
-                        try:
-                            resolved = member_path.resolve()
-                        except FileNotFoundError:
-                            # Parent directories may not exist yet; resolve parent
-                            resolved = member_path.parent.resolve()
-                        if not str(resolved).startswith(str(temp_dir.resolve())):
-                            raise YunxiaoPackageExtractionError(f"Blocked unsafe path traversal for member: {member.name}")
-                    # 只提取已验证的成员
-                    handle.extractall(path=temp_dir, members=members)
+                        if member.isdir():
+                            member_path.mkdir(parents=True, exist_ok=True)
+                            continue
+                        if not member.isfile():
+                            continue
+                        member_path.parent.mkdir(parents=True, exist_ok=True)
+                        extracted = handle.extractfile(member)
+                        if extracted is None:
+                            continue
+                        with extracted, member_path.open("wb") as target_handle:
+                            shutil.copyfileobj(extracted, target_handle)
+                        if member.mode:
+                            try:
+                                os.chmod(member_path, member.mode)
+                            except OSError:
+                                pass
                 else:
-                    handle.extractall(path=temp_dir)
+                    members = handle.infolist()
+                    safe_members = validate_members(members, temp_dir, zip_mode=True)
+                    # 手动提取zip成员以增强安全性
+                    for member in safe_members:
+                        name = member.filename
+                        member_path = temp_dir / name
+                        if member.is_dir():
+                            member_path.mkdir(parents=True, exist_ok=True)
+                            continue
+                        member_path.parent.mkdir(parents=True, exist_ok=True)
+                        with handle.open(member, "r") as source, member_path.open("wb") as target:
+                            shutil.copyfileobj(source, target)
+                        perm = member.external_attr >> 16
+                        if perm:
+                            try:
+                                os.chmod(member_path, perm)
+                            except OSError:
+                                pass
 
-                # GitHub tarballs have a top-level directory like "owner-repo-shorthash"
-                # We want to return the actual code root, not that wrapper dir
+                # Determine actual code root
                 candidates = list(temp_dir.iterdir())
                 if len(candidates) == 1 and candidates[0].is_dir():
                     return candidates[0]
                 return temp_dir
         except Exception as exc:
             shutil.rmtree(temp_dir, ignore_errors=True)
+            if isinstance(exc, ArchiveValidationError):
+                raise YunxiaoPackageExtractionError(f"Archive validation failed: {exc}") from exc
             raise YunxiaoPackageExtractionError(f"Archive extraction failed: {exc}") from exc
 
     def backup_database(self, candidates: Iterable[Path], backup_dir: Path) -> Optional[Path]:
         """Create a timestamped backup of the database file if present."""
-        backup_dir.mkdir(exponents=True, exist_ok=True)
+        backup_dir.mkdir(parents=True, exist_ok=True)
 
         for candidate in candidates:
             if candidate.is_file():
@@ -370,28 +362,47 @@ class YunxiaoReleasePackageManager:
                 else:
                     shutil.copy2(item, dest)
 
-            # 3. Restore preserved files/directories
+            # 3. Restore preserved files
             print("🔓 Restoring preserved files:")
             for relative_path, temp_path in preserved.items():
                 dest_path = self.project_root / relative_path
-                dest_path.parent.mkdir(parents=True, exist_ok=True)
-                
                 if temp_path.is_dir():
                     shutil.copytree(temp_path, dest_path, dirs_exist_ok=True)
                 else:
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(temp_path, dest_path)
                 print(f"   📁 {relative_path}")
 
-        # 4. Install dependencies if not skipped
+        # 4. Install or upgrade dependencies
         if not skip_deps:
-            print("⚙️  Installing/updating Python dependencies...")
-            cmd = [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
-            if pip_extra_args:
-                cmd.extend(pip_extra_args.split())
-            
-            env = os.environ.copy()
-            result = subprocess.run(cmd, cwd=self.project_root, env=env)
-            if result.returncode != 0:
-                raise RuntimeError(f"Pip install failed with exit code {result.returncode}")
+            self._update_dependencies(pip_extra_args)
 
-        print("✅ Update successfully applied!")
+        print("✅ Application update completed")
+
+    def _update_dependencies(self, pip_extra_args: str) -> None:
+        """Install or upgrade Python dependencies."""
+        import subprocess
+
+        print("🐍 Updating Python dependencies...")
+        cmd = [sys.executable, "-m", "pip", "install", "-r", str(self.project_root / "requirements.txt")]
+        if pip_extra_args:
+            cmd.extend(pip_extra_args.split())
+
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=str(self.project_root),
+                capture_output=True,
+                text=True,
+                timeout=300
+            )
+            if result.returncode != 0:
+                print(f"⚠️  Dependency update had issues (exit code {result.returncode})")
+                print("STDOUT:", result.stdout)
+                print("STDERR:", result.stderr)
+            else:
+                print("✅ Dependencies updated successfully")
+        except subprocess.TimeoutExpired:
+            print("⚠️  Dependency update timed out after 5 minutes")
+        except Exception as exc:
+            print(f"⚠️  Dependency update failed: {exc}")

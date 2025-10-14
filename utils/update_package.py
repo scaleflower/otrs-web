@@ -15,10 +15,13 @@ import tarfile
 import tempfile
 import traceback
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional, Sequence
 
 import requests
+# Import the shared archive validation utility
+from .archive_utils import validate_members, ArchiveValidationError
 
 
 class ReleaseDownloadError(RuntimeError):
@@ -215,14 +218,16 @@ class ReleasePackageManager:
             with tarfile.open(archive_path, "r:gz") as tar:
                 members = tar.getmembers()
                 print(f"🔍 Validating {len(members)} archive members...")
-                self._validate_members(members, dest_dir)
+                safe_members = validate_members(members, dest_dir)
                 print("✅ Archive validation passed")
                 print("📤 Extracting files...")
                 # 修复tarfile.extractall安全问题，只提取已验证的成员
-                tar.extractall(dest_dir, members=members)
+                tar.extractall(dest_dir, members=safe_members)
                 print("✅ Extraction completed")
         except (tarfile.TarError, OSError) as exc:
             raise PackageExtractionError(f"Failed to extract tar archive: {exc}") from exc
+        except ArchiveValidationError as exc:
+            raise PackageExtractionError(f"Archive validation failed: {exc}") from exc
 
         return self._discover_root_dir(dest_dir)
 
@@ -234,40 +239,21 @@ class ReleasePackageManager:
             with zipfile.ZipFile(archive_path, "r") as zf:
                 members = zf.infolist()
                 print(f"🔍 Validating {len(members)} archive members...")
-                self._validate_members(members, dest_dir, zip_mode=True, zip_file=zf)
+                safe_members = validate_members(members, dest_dir, zip_mode=True)
                 print("✅ Archive validation passed")
                 print("📤 Extracting files...")
                 # 修复zipfile.extractall安全问题，只提取已验证的成员
-                zf.extractall(dest_dir, members)
+                zf.extractall(dest_dir, safe_members)
                 print("✅ Extraction completed")
         except (zipfile.BadZipFile, OSError) as exc:
             raise PackageExtractionError(f"Failed to extract zip archive: {exc}") from exc
+        except ArchiveValidationError as exc:
+            raise PackageExtractionError(f"Archive validation failed: {exc}") from exc
 
         return self._discover_root_dir(dest_dir)
 
-    def _validate_members(
-        self,
-        members: Iterable,
-        dest_dir: Path,
-        zip_mode: bool = False,
-        zip_file: Optional["zipfile.ZipFile"] = None,
-    ) -> None:
-        """Prevent path traversal attacks during extraction."""
-        dest_root = dest_dir.resolve()
-        for member in members:
-            name = member.filename if zip_mode else member.name
-            member_path = dest_root / name
-            try:
-                resolved = member_path.resolve()
-            except FileNotFoundError:
-                # Parent directories may not exist yet; resolve parent
-                resolved = member_path.parent.resolve()
-            if not str(resolved).startswith(str(dest_root)):
-                raise PackageExtractionError(f"Blocked unsafe path traversal for member: {name}")
-            if zip_mode and zip_file and zip_file.getinfo(name).is_dir():
-                continue
-            if not zip_mode and getattr(member, "isdir", lambda: False)():
-                continue
+    # The _validate_members method has been removed as we now use the shared
+    # archive_utils.validate_members function for security validation
 
     def _discover_root_dir(self, dest_dir: Path) -> Path:
         """Return the first directory inside extraction directory."""
@@ -281,119 +267,129 @@ class ReleasePackageManager:
         """Synchronise extracted files into the project directory."""
         print(f"🔁 Synchronising files from {source_root} to {self.project_root}")
         synced_files = 0
-        skipped_files = 0
-        
-        for root, dirs, files in os.walk(source_root):
-            rel_root = os.path.relpath(root, source_root)
-            if rel_root == ".":
-                rel_root = ""
 
-            # Skip preserved directories entirely
-            if rel_root and self._should_preserve(rel_root):
-                print(f"⏭️  Skipping preserved directory: {rel_root}")
-                dirs[:] = []
-                skipped_files += len(files)
+        for item in source_root.rglob("*"):
+            relative_path = item.relative_to(source_root)
+            target_path = self.project_root / relative_path
+
+            # Skip preserved paths
+            if any(str(relative_path).startswith(preserved) for preserved in self.preserve_paths):
+                print(f"🔒 Skipping preserved path: {relative_path}")
                 continue
 
-            dest_root = self.project_root if not rel_root else self.project_root / rel_root
-            dest_root.mkdir(parents=True, exist_ok=True)
-
-            # Filter directories in-place to honour preserved paths
-            original_dirs_count = len(dirs)
-            dirs[:] = [
-                d for d in dirs if not self._should_preserve(os.path.join(rel_root, d) if rel_root else d)
-            ]
-            skipped_dirs = original_dirs_count - len(dirs)
-
-            for file_name in files:
-                rel_file = os.path.join(rel_root, file_name) if rel_root else file_name
-                if self._should_preserve(rel_file):
-                    print(f"⏭️  Skipping preserved file: {rel_file}")
-                    skipped_files += 1
-                    continue
-                src_path = Path(root) / file_name
-                dest_path = dest_root / file_name
-                dest_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src_path, dest_path)
+            if item.is_file():
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target_path)
                 synced_files += 1
+            elif item.is_dir():
+                target_path.mkdir(parents=True, exist_ok=True)
 
-        print(f"✅ Synchronisation completed: {synced_files} files copied, {skipped_files} files skipped")
+        print(f"✅ Synchronisation completed ({synced_files} files copied)")
 
     # ------------------------------------------------------------------
     # Misc utilities
     # ------------------------------------------------------------------
-    def backup_database(self, database_candidates: Sequence[Path], backup_dir: Path) -> Optional[Path]:
-        """Copy the first existing database file to a backup directory."""
-        print("🛡️  Creating database backup...")
+    def backup_database(self, candidates: Iterable[Path], backup_dir: Path) -> Optional[Path]:
+        """Create a timestamped backup of the database file if present."""
         backup_dir.mkdir(parents=True, exist_ok=True)
-        for candidate in database_candidates:
-            if candidate.exists():
-                timestamp = os.environ.get("UPDATE_TIMESTAMP")
-                if not timestamp:
-                    from datetime import datetime
 
-                    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-                backup_path = backup_dir / f"backup_{candidate.stem}_{timestamp}.db"
-                print(f"💾 Backing up database from {candidate} to {backup_path}")
+        for candidate in candidates:
+            if candidate.is_file():
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = backup_dir / f"backup_{timestamp}.db"
                 shutil.copy2(candidate, backup_path)
-                print("✅ Database backup completed")
                 return backup_path
-        print("ℹ️  No database file detected for backup")
         return None
 
-    def install_dependencies(self, pip_command: Sequence[str], env: Optional[dict] = None) -> None:
-        """Run dependency installation via subprocess."""
-        print(f"📦 Installing dependencies with command: {' '.join(pip_command)}")
-        self._run_subprocess(pip_command, env=env)
-        print("✅ Dependencies installed successfully")
+    def apply_update(self, source_root: Path, skip_deps: bool = False, pip_extra_args: str = "") -> None:
+        """Replace the current application with the downloaded release."""
+        from datetime import datetime
 
-    def run_migration(
-        self,
-        script_path: Path,
-        env: Optional[dict] = None,
-        python_executable: Optional[str] = None,
-    ) -> None:
-        """Execute migration script if present."""
-        if script_path.exists():
-            print(f"🛠️  Running migration script: {script_path}")
-            interpreter = python_executable or sys.executable
-            self._run_subprocess([interpreter, str(script_path)], env=env)
-            print(f"✅ Migration script {script_path.name} completed")
+        print(f"🔄 Applying update from: {source_root}")
+        print(f"📍 Project root: {self.project_root}")
 
-    def _run_subprocess(self, command: Sequence[str], env: Optional[dict] = None) -> None:
-        """Execute command and raise an informative error on failure."""
+        # 1. Preserve files/directories according to config
+        preserved = {}
+        with tempfile.TemporaryDirectory(prefix="otrs_preserve_") as temp_root_s:
+            temp_root = Path(temp_root_s)
+
+            print("🔒 Preserving files:")
+            for relative_path in self.preserve_paths:
+                source_path = self.project_root / relative_path
+                if source_path.exists():
+                    dest_path = temp_root / relative_path.replace("/", "_").replace("\\", "_")
+                    if source_path.is_dir():
+                        shutil.copytree(source_path, dest_path, dirs_exist_ok=True)
+                    else:
+                        dest_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(source_path, dest_path)
+                    preserved[relative_path] = dest_path
+                    print(f"   📁 {relative_path}")
+
+            # 2. Replace project directory with downloaded release
+            print("🗑️  Removing old application files...")
+            for item in self.project_root.iterdir():
+                # Skip preserved paths
+                if any(str(item.relative_to(self.project_root)).startswith(p) for p in self.preserve_paths):
+                    continue
+
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+
+            print("📋 Copying new application files...")
+            for item in source_root.iterdir():
+                dest = self.project_root / item.name
+                if item.is_dir():
+                    shutil.copytree(item, dest, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(item, dest)
+
+            # 3. Restore preserved files
+            print("🔓 Restoring preserved files:")
+            for relative_path, temp_path in preserved.items():
+                dest_path = self.project_root / relative_path
+                if temp_path.is_dir():
+                    shutil.copytree(temp_path, dest_path, dirs_exist_ok=True)
+                else:
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(temp_path, dest_path)
+                print(f"   📁 {relative_path}")
+
+        # 4. Install or upgrade dependencies
+        if not skip_deps:
+            self._update_dependencies(pip_extra_args)
+
+        print("✅ Application update completed")
+
+    def _update_dependencies(self, pip_extra_args: str) -> None:
+        """Install or upgrade Python dependencies."""
         import subprocess
 
-        if not command:
-            return
+        print("🐍 Updating Python dependencies...")
+        cmd = [sys.executable, "-m", "pip", "install", "-r", str(self.project_root / "requirements.txt")]
+        if pip_extra_args:
+            cmd.extend(pip_extra_args.split())
 
-        command = list(command)
-        print(f"🔧 Executing command: {' '.join(command)}")
         try:
             result = subprocess.run(
-                command,
-                cwd=self.project_root,
-                env=env,
-                check=False,
+                cmd,
+                cwd=str(self.project_root),
                 capture_output=True,
                 text=True,
+                timeout=300
             )
-        except OSError as exc:
-            raise RuntimeError(f"Failed to execute command {' '.join(command)}: {exc}") from exc
-
-        if result.returncode != 0:
-            error_msg = "Command failed ({code}): {cmd}\nSTDOUT: {stdout}\nSTDERR: {stderr}".format(
-                code=result.returncode,
-                cmd=" ".join(command),
-                stdout=result.stdout or "<empty>",
-                stderr=result.stderr or "<empty>",
-            )
-            print(f"❌ {error_msg}")
-            raise RuntimeError(error_msg)
-        
-        if result.stdout:
-            print(f"📄 Command output:\n{result.stdout}")
-        print("✅ Command executed successfully")
+            if result.returncode != 0:
+                print(f"⚠️  Dependency update had issues (exit code {result.returncode})")
+                print("STDOUT:", result.stdout)
+                print("STDERR:", result.stderr)
+            else:
+                print("✅ Dependencies updated successfully")
+        except subprocess.TimeoutExpired:
+            print("⚠️  Dependency update timed out after 5 minutes")
+        except Exception as exc:
+            print(f"⚠️  Dependency update failed: {exc}")
 
     def _should_preserve(self, relative_path: str) -> bool:
         """Check if a relative path should be preserved during sync."""
