@@ -38,6 +38,7 @@ class UpdateLog(db.Model):
     current_version = db.Column(db.String(50), nullable=True)
     status = db.Column(db.String(20), nullable=False, default=UpdateLogStatus.STARTED.value)
     force_reinstall = db.Column(db.Boolean, default=False)
+    source = db.Column(db.String(20), nullable=True)  # 更新源 (github, yunxiao)
     
     # Timing information
     started_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

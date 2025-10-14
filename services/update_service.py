@@ -379,13 +379,40 @@ class UpdateService:
                 raise RuntimeError(f'Already using version {target_version}. Use force reinstall to reapply')
 
             # 记录更新日志
+            update_id = str(uuid.uuid4())
             update_log = UpdateLog(
+                update_id=update_id,
                 target_version=target,
                 source=source,  # 记录更新源
                 force_reinstall=force_reinstall
             )
             db.session.add(update_log)
+            db.session.flush()  # 获取update_log.id
+
+            # 定义更新步骤
+            update_steps = [
+                (UpdateLogStep.BACKUP_DATABASE.value, "备份数据库", 1),
+                (UpdateLogStep.FETCH_REPOSITORY.value, "获取版本元数据", 2),
+                (UpdateLogStep.CHECKOUT_VERSION.value, "下载更新包", 3),
+                (UpdateLogStep.PULL_CHANGES.value, "同步更新文件", 4),
+                (UpdateLogStep.INSTALL_DEPENDENCIES.value, "安装依赖包", 5),
+                (UpdateLogStep.RUN_MIGRATIONS.value, "执行数据库迁移", 6),
+                (UpdateLogStep.RESTART_APPLICATION.value, "重启应用程序", 7)
+            ]
+            
+            # 为每个步骤创建UpdateStepLog记录
+            for step_name, step_description, step_order in update_steps:
+                step_log = UpdateStepLog(
+                    update_log_id=update_log.id,
+                    step_name=step_name,
+                    step_order=step_order
+                )
+                db.session.add(step_log)
+
             db.session.commit()
+            
+            # 发送更新开始事件
+            self._send_update_start_event(update_log)
 
             # 启动后台更新线程
             self._update_thread = threading.Thread(
@@ -400,6 +427,28 @@ class UpdateService:
                 'message': f'Update to version {target} started',
                 'update_log_id': update_log.id
             }
+
+    def _send_update_start_event(self, update_log: UpdateLog):
+        """Send update start event for real-time updates"""
+        try:
+            import json
+            from pathlib import Path
+            
+            progress_dir = Path('db') / 'update_progress'
+            progress_dir.mkdir(exist_ok=True)
+            
+            progress_file = progress_dir / f"{update_log.id}_start.json"
+            progress_data = {
+                'update_log_id': update_log.id,
+                'status': 'started',
+                'target_version': update_log.target_version,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            with open(progress_file, 'w', encoding='utf-8') as f:
+                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"⚠️ Warning: Failed to send update start event: {e}")
 
     def _execute_update(self, target_version: str, force_reinstall: bool, source: str, update_log_id: str):
         """Execute the actual update process in background thread"""
@@ -452,6 +501,7 @@ class UpdateService:
 
         try:
             # Step 1: backup database
+            self._send_step_start_event(update_log, UpdateLogStep.BACKUP_DATABASE.value)
             backup_candidates = [
                 project_root / 'db' / 'otrs_data.db',
                 project_root / 'instance' / 'otrs_web.db',
@@ -462,6 +512,7 @@ class UpdateService:
             self._update_step_status(update_log, UpdateLogStep.BACKUP_DATABASE.value, backup_message)
 
             # Step 2: fetch release metadata
+            self._send_step_start_event(update_log, UpdateLogStep.FETCH_REPOSITORY.value)
             metadata = manager.fetch_release_metadata(target_version)
             resolved_target = metadata.tag_name or target_version
             if resolved_target and update_log.target_version != resolved_target:
@@ -482,6 +533,7 @@ class UpdateService:
             )
 
             # Step 3: download archive
+            self._send_step_start_event(update_log, UpdateLogStep.CHECKOUT_VERSION.value)
             archive_path = manager.download_release_archive(metadata, resolved_target)
             self._update_step_status(
                 update_log,
@@ -490,6 +542,7 @@ class UpdateService:
             )
 
             # Step 4: extract and sync files
+            self._send_step_start_event(update_log, UpdateLogStep.PULL_CHANGES.value)
             source_root = manager.extract_archive(archive_path)
             manager.sync_to_project(source_root)
             self._update_step_status(
@@ -499,6 +552,7 @@ class UpdateService:
             )
 
             # Step 5: install dependencies (optional)
+            self._send_step_start_event(update_log, UpdateLogStep.INSTALL_DEPENDENCIES.value)
             install_deps = self._config_bool('APP_UPDATE_INSTALL_DEPENDENCIES', default=True)
             if install_deps:
                 pip_command = [sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt']
@@ -516,6 +570,7 @@ class UpdateService:
             )
 
             # Step 6: run migrations (optional)
+            self._send_step_start_event(update_log, UpdateLogStep.RUN_MIGRATIONS.value)
             run_migrations = self._config_bool('APP_UPDATE_RUN_MIGRATIONS', default=True)
             migration_outputs = []
             if run_migrations:
@@ -543,6 +598,28 @@ class UpdateService:
             import traceback
             traceback.print_exc()
             self._finalize_failure_with_logging(update_log, f'Update execution error: {err}')
+
+    def _send_step_start_event(self, update_log: UpdateLog, step_name: str):
+        """Send step start event for real-time updates"""
+        try:
+            import json
+            from pathlib import Path
+            
+            progress_dir = Path('db') / 'update_progress'
+            progress_dir.mkdir(exist_ok=True)
+            
+            progress_file = progress_dir / f"{update_log.id}.json"
+            progress_data = {
+                'update_log_id': update_log.id,
+                'step_name': step_name,
+                'status': 'started',
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            with open(progress_file, 'w', encoding='utf-8') as f:
+                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"⚠️ Warning: Failed to send step start event: {e}")
 
     def is_update_running(self):
         """Check if an update is currently running"""
@@ -667,10 +744,40 @@ class UpdateService:
             update_log.completed_steps += 1
             db.session.commit()
             print(f"✅ Step completed: {step_name}")
+            
+            # 发送实时更新事件
+            self._send_progress_event(update_log, step_log, 'completed', output)
 
     def _mark_step_completed(self, update_log: UpdateLog, step_name: str, output: str = ''):
         """Mark step as completed in update log"""
         self._update_step_status(update_log, step_name, output)
+
+    def _send_progress_event(self, update_log: UpdateLog, step_log: UpdateStepLog, status: str, output: str = ''):
+        """Send progress event for real-time updates"""
+        try:
+            # 这里可以集成WebSocket或其他实时通信机制
+            # 当前实现使用简单的文件方式存储进度，供前端轮询获取
+            import json
+            from pathlib import Path
+            
+            progress_dir = Path('db') / 'update_progress'
+            progress_dir.mkdir(exist_ok=True)
+            
+            progress_file = progress_dir / f"{update_log.id}.json"
+            progress_data = {
+                'update_log_id': update_log.id,
+                'step_name': step_log.step_name,
+                'step_order': step_log.step_order,
+                'status': status,
+                'output': output,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            with open(progress_file, 'w', encoding='utf-8') as f:
+                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            # 忽略进度更新错误，不影响主流程
+            print(f"⚠️ Warning: Failed to send progress event: {e}")
 
     def _resolve_download_dir(self, project_root: Path) -> Path:
         """Resolve download directory from configuration"""
@@ -747,6 +854,9 @@ class UpdateService:
         
         db.session.commit()
         
+        # 清理进度文件
+        self._cleanup_progress_files(update_log.id)
+        
         delay = max(1, int(self._config('APP_UPDATE_RESTART_DELAY', 5) or 5))
         self._schedule_restart(delay)
 
@@ -763,6 +873,26 @@ class UpdateService:
         update_log.mark_failed(message)
         
         db.session.commit()
+        
+        # 清理进度文件
+        self._cleanup_progress_files(update_log.id)
+
+    def _cleanup_progress_files(self, update_log_id: int):
+        """Clean up progress files"""
+        try:
+            from pathlib import Path
+            import os
+            
+            progress_dir = Path('db') / 'update_progress'
+            if progress_dir.exists():
+                # 删除与该更新相关的所有进度文件
+                for progress_file in progress_dir.glob(f"{update_log_id}*.json"):
+                    try:
+                        os.remove(progress_file)
+                    except Exception:
+                        pass  # 忽略删除错误
+        except Exception:
+            pass  # 忽略清理错误
 
     def _capture_commit_info(self, update_log: UpdateLog):
         """Capture current commit information"""
