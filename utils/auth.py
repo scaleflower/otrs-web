@@ -21,10 +21,15 @@ class PasswordProtection:
         """Initialize with Flask app"""
         self.app = app
 
-def require_daily_stats_password(f):
-    """Decorator to require password for daily statistics access"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
+    @staticmethod
+    def verify_password(password):
+        """Verify if provided password matches expected password"""
+        expected_password = os.environ.get('DAILY_STATS_PASSWORD') or 'Enabling@2025'
+        return password == expected_password
+
+    @staticmethod
+    def is_authenticated():
+        """Check if user is authenticated for daily stats"""
         # Check if password is already validated in session
         if 'daily_stats_authenticated' in session:
             # Check if session is still valid (2 hours)
@@ -32,11 +37,27 @@ def require_daily_stats_password(f):
             if auth_time:
                 auth_datetime = datetime.fromisoformat(auth_time)
                 if datetime.utcnow() - auth_datetime < timedelta(hours=2):
-                    return f(*args, **kwargs)
+                    return True
             
             # Session expired, remove from session
             session.pop('daily_stats_authenticated', None)
             session.pop('daily_stats_auth_time', None)
+        
+        return False
+
+    @staticmethod
+    def authenticate_session():
+        """Authenticate current session for daily stats"""
+        session['daily_stats_authenticated'] = True
+        session['daily_stats_auth_time'] = datetime.utcnow().isoformat()
+
+def require_daily_stats_password(f):
+    """Decorator to require password for daily statistics access"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check if password is already validated in session
+        if PasswordProtection.is_authenticated():
+            return f(*args, **kwargs)
         
         # Check if password is provided in request
         if request.method == 'POST':
@@ -49,8 +70,7 @@ def require_daily_stats_password(f):
         
         if password and password == expected_password:
             # Set session for 2 hours
-            session['daily_stats_authenticated'] = True
-            session['daily_stats_auth_time'] = datetime.utcnow().isoformat()
+            PasswordProtection.authenticate_session()
             return f(*args, **kwargs)
         
         # Return password form

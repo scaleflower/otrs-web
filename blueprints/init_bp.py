@@ -4,7 +4,7 @@ System initialization blueprint for first-time setup
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
 from models import db, SystemConfig, AppUpdateStatus
-from config import Config
+from config.base import Config
 import os
 import sqlalchemy
 

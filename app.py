@@ -1,40 +1,37 @@
+#!/usr/bin/env python3
 """
-Main application file for OTRS Web Application
+OTRS工单数据分析系统
+基于Flask的Web应用，用于分析和可视化OTRS工单数据
 """
 
 import os
-import glob
+import sys
+import importlib
 from datetime import datetime
 from urllib.parse import quote_plus
 from flask import Flask, render_template, jsonify, request, redirect, url_for, send_file, abort
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Removed .env file loading to avoid committing sensitive information to GitHub
-
-import glob
-import os
-
-from flask import Flask, render_template, request, send_file, jsonify, abort
-from datetime import datetime
+# 加载.env文件中的环境变量
+from dotenv import load_dotenv
+load_dotenv()
 
 # 重新导入配置类，确保环境变量已加载
-import importlib
 import config
 importlib.reload(config)
-from config import Config
+from config import get_config
 from models import init_db
-from werkzeug.utils import secure_filename
 
 # Import blueprints
 from blueprints.upload_bp import upload_bp
 from blueprints.statistics_bp import statistics_bp
 from blueprints.export_bp import export_bp
-from blueprints.daily_stats_bp import daily_stats_bp
 from blueprints.backup_bp import backup_bp
 from blueprints.update_bp import update_bp
 from blueprints.admin_bp import admin_bp
 from blueprints.init_bp import init_bp
+from blueprints.daily_stats_bp import daily_stats_bp
 
 # Import services after app initialization to avoid circular imports
 from services import (
@@ -54,7 +51,7 @@ from utils.auth import require_daily_stats_password, PasswordProtection
 app = Flask(__name__)
 
 # Load configuration
-app.config.from_object(Config)
+app.config.from_object(get_config())
 
 # Initialize database
 init_db(app)
@@ -72,6 +69,7 @@ app.register_blueprint(update_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(init_bp)
 
+
 # Perform an initial update check so clients know the latest version
 if app.config.get('APP_UPDATE_ENABLED', True):
     try:
@@ -80,7 +78,7 @@ if app.config.get('APP_UPDATE_ENABLED', True):
         app.logger.warning('Initial update check failed: %s', exc)
 
 # Application version from config
-APP_VERSION = app.config.get('APP_VERSION', '1.2.3')
+APP_VERSION = app.config.get('APP_VERSION', '1.0.0')
 
 @app.route('/')
 def index():
@@ -1086,7 +1084,6 @@ def file_too_large(error):
 
 if __name__ == '__main__':
     # Initialize configuration
-    Config.init_app(app)
     
     # Determine runtime configuration (prefer environment overrides for convenience)
     host = os.environ.get('APP_HOST', app.config.get('APP_HOST', '0.0.0.0'))

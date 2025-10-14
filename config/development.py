@@ -3,7 +3,7 @@ Development configuration for OTRS Web Application
 """
 
 import os
-from .base import BaseConfig
+from .base import Config as BaseConfig
 
 class DevelopmentConfig(BaseConfig):
     """Development configuration class"""

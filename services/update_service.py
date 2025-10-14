@@ -30,6 +30,7 @@ from utils.yunxiao_update_package import (
     YunxiaoReleasePackageManager,
     YunxiaoPackageExtractionError,
 )
+from services import system_config_service
 
 
 class UpdateService:
@@ -124,7 +125,12 @@ class UpdateService:
         """检查GitHub更新"""
         with self._ensure_app_context():
             repo = self._config('APP_UPDATE_REPO')
-            token = self._config('APP_UPDATE_GITHUB_TOKEN')
+            # 使用system_config_service实例获取GitHub Token
+            try:
+                from services import system_config_service
+                token = system_config_service.get_config_value('APP_UPDATE_GITHUB_TOKEN')
+            except Exception:
+                token = None
             
             # 构建请求头，即使没有token也继续执行
             headers = {
@@ -143,92 +149,129 @@ class UpdateService:
                 status = AppUpdateStatus(current_version=self._config('APP_VERSION', '0.0.0'))
                 db.session.add(status)
 
+            # 首先尝试获取最新的Release
             url = f'https://api.github.com/repos/{repo}/releases/latest'
             try:
                 response = requests.get(url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    payload = response.json()
+                    latest_version = payload.get('tag_name', '').lstrip('v')
+                    if latest_version:
+                        # 处理成功获取Release的情况
+                        status.last_checked_at = datetime.utcnow()
+                        status.last_error = None
+
+                        current_version = status.current_version or '0.0.0'
+                        # 使用语义化版本号比较
+                        if self._compare_versions(current_version, latest_version):
+                            status.status = 'update_available'
+                            db.session.commit()
+                            return {
+                                'success': True,
+                                'status': 'update_available',
+                                'current_version': current_version,
+                                'latest_version': latest_version,
+                                'release_name': payload.get('name'),
+                                'release_notes': payload.get('body'),
+                                'release_url': payload.get('html_url'),
+                                'published_at': self._format_datetime(payload.get('published_at')),
+                                'source': 'github',
+                                'message': f'New version {latest_version} is available!'
+                            }
+                        else:
+                            status.status = 'up_to_date'
+                            db.session.commit()
+                            return {
+                                'success': True,
+                                'status': 'up_to_date',
+                                'current_version': current_version,
+                                'latest_version': latest_version,
+                                'source': 'github',
+                                'message': 'You are using the latest version'
+                            }
+            except requests.RequestException as err:
+                print(f"❌ Failed to contact GitHub Releases: {err}")
+            
+            # 如果获取Release失败，尝试获取最新的标签
+            url = f'https://api.github.com/repos/{repo}/tags'
+            try:
+                response = requests.get(url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    tags = response.json()
+                    if tags:
+                        # 获取第一个标签作为最新标签（GitHub API返回按时间倒序排列）
+                        latest_tag = tags[0]
+                        latest_version = latest_tag.get('name', '').lstrip('v')
+                        if latest_version:
+                            status.last_checked_at = datetime.utcnow()
+                            status.last_error = None
+
+                            current_version = status.current_version or '0.0.0'
+                            # 使用语义化版本号比较
+                            if self._compare_versions(current_version, latest_version):
+                                status.status = 'update_available'
+                                db.session.commit()
+                                return {
+                                    'success': True,
+                                    'status': 'update_available',
+                                    'current_version': current_version,
+                                    'latest_version': latest_version,
+                                    'tag_name': latest_tag.get('name'),
+                                    'source': 'github',
+                                    'message': f'New version {latest_version} is available!'
+                                }
+                            else:
+                                status.status = 'up_to_date'
+                                db.session.commit()
+                                return {
+                                    'success': True,
+                                    'status': 'up_to_date',
+                                    'current_version': current_version,
+                                    'latest_version': latest_version,
+                                    'source': 'github',
+                                    'message': 'You are using the latest version'
+                                }
             except requests.RequestException as err:
                 error_msg = f'Failed to contact GitHub: {err}'
-                self._record_error(error_msg)
-                return {'success': False, 'error': error_msg}
-
-            # 处理API速率限制
-            if response.status_code == 403:
-                # 检查是否是速率限制问题
-                if response.headers.get('X-RateLimit-Remaining') == '0':
-                    reset_time = response.headers.get('X-RateLimit-Reset')
-                    error_msg = f'GitHub API rate limit exceeded. Rate limit will reset at {reset_time}.'
-                    if not token:
-                        error_msg += ' 请设置APP_UPDATE_GITHUB_TOKEN环境变量以提高速率限制。'
-                    self._record_error(error_msg)
-                    return {'success': False, 'error': error_msg}
+                print(f"❌ {error_msg}")
+                return {
+                    'success': False,
+                    'error': error_msg
+                }
             
-            if response.status_code == 404:
-                status.latest_version = status.current_version
-                status.status = 'up_to_date'
-                status.last_checked_at = datetime.utcnow()
-                status.last_error = None
-                db.session.commit()
+            # 如果API返回401错误，说明Token无效
+            if response.status_code == 401:
+                print("❌ GitHub API error 401: Bad credentials")
                 return {
-                    'success': True,
-                    'status': 'up_to_date',
-                    'current_version': status.current_version,
-                    'latest_version': status.current_version,
-                    'message': 'No releases found in repository'
+                    'success': False,
+                    'error': 'GitHub API error 401: Bad credentials',
+                    'status_code': 401
                 }
-            elif response.status_code == 200:
-                try:
-                    payload = response.json()
-                except json.JSONDecodeError as err:
-                    error_msg = f'GitHub response parse error: {err}'
-                    self._record_error(error_msg)
-                    return {'success': False, 'error': error_msg}
-            else:
-                error_msg = f'GitHub API error {response.status_code}: {response.text[:200]}'
-                self._record_error(error_msg)
-                return {'success': False, 'error': error_msg}
-
-            latest_version = payload.get('tag_name') or payload.get('name')
-            if not latest_version:
-                error_msg = 'Missing tag_name in GitHub release payload'
-                self._record_error(error_msg)
-                return {'success': False, 'error': error_msg}
-
-            status.latest_version = latest_version
-            status.release_name = payload.get('name')
-            status.release_body = payload.get('body')
-            status.release_url = payload.get('html_url')
-            status.published_at = self._parse_datetime(payload.get('published_at'))
-            status.last_checked_at = datetime.utcnow()
-            status.last_error = None
-
-            current_version = status.current_version or '0.0.0'
-            # 使用语义化版本号比较
-            if self._compare_versions(current_version, latest_version):
-                status.status = 'update_available'
-                db.session.commit()
+            
+            # 如果API速率受限
+            if response.status_code == 403 and 'rate limit' in response.text.lower():
+                print("⚠️  GitHub API rate limit exceeded")
                 return {
-                    'success': True,
-                    'status': 'update_available',
-                    'current_version': current_version,
-                    'latest_version': latest_version,
-                    'release_name': payload.get('name'),
-                    'release_notes': payload.get('body'),
-                    'release_url': payload.get('html_url'),
-                    'published_at': self._format_datetime(payload.get('published_at')),
-                    'source': 'github',
-                    'message': f'New version {latest_version} is available!'
+                    'success': False,
+                    'error': 'GitHub API rate limit exceeded',
+                    'status_code': 403
                 }
-            else:
-                status.status = 'up_to_date'
-                db.session.commit()
+
+            if response.status_code != 200:
+                error_msg = f'GitHub API request failed with status {response.status_code}'
+                print(f"❌ {error_msg}")
                 return {
-                    'success': True,
-                    'status': 'up_to_date',
-                    'current_version': current_version,
-                    'latest_version': latest_version,
-                    'source': 'github',
-                    'message': 'You are using the latest version'
+                    'success': False,
+                    'error': error_msg,
+                    'status_code': response.status_code
                 }
+
+            error_msg = 'Invalid data received from GitHub'
+            print(f"❌ {error_msg}")
+            return {
+                'success': False,
+                'error': error_msg
+            }
 
     def _check_yunxiao_updates(self):
         """检查阿里云云效更新"""
@@ -760,6 +803,17 @@ class UpdateService:
 
     def _config(self, key, default=None):
         """Get configuration value"""
+        # 尝试在应用上下文中从系统配置服务获取配置
+        try:
+            from services import system_config_service
+            db_value = system_config_service.get_config_value(key)
+            if db_value is not None:
+                return db_value
+        except:
+            # 如果无法获取数据库配置，则继续使用应用配置
+            pass
+            
+        # 然后从应用配置获取
         if self.app:
             return self.app.config.get(key, default)
         return current_app.config.get(key, default)

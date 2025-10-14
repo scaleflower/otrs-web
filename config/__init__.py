@@ -3,7 +3,7 @@ Configuration module for OTRS Web Application
 """
 
 import os
-from .base import BaseConfig
+from .base import Config as BaseConfig
 from .development import DevelopmentConfig
 from .production import ProductionConfig
 
@@ -15,9 +15,6 @@ config_map = {
 }
 
 def get_config():
-    """Get configuration based on environment"""
-    env = os.environ.get('FLASK_ENV', 'development')
-    return config_map.get(env, config_map['default'])
-
-# Export commonly used config
-Config = get_config()
+    """Get appropriate configuration based on environment"""
+    env = os.environ.get('FLASK_ENV') or 'default'
+    return config_map.get(env, BaseConfig)

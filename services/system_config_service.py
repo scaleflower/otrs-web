@@ -49,7 +49,6 @@ class SystemConfigService:
             'APP_PORT': 'APP_PORT',
             'APP_HOST': 'APP_HOST',
             'DAILY_STATS_PASSWORD': 'DAILY_STATS_PASSWORD',
-            'APP_UPDATE_GITHUB_TOKEN': 'APP_UPDATE_GITHUB_TOKEN',
             'APP_UPDATE_YUNXIAO_TOKEN': 'APP_UPDATE_YUNXIAO_TOKEN',  # 添加云效Token支持
             'APP_UPDATE_SOURCE': 'APP_UPDATE_SOURCE',  # 添加更新源配置
             'APP_UPDATE_USE_SSH': 'APP_UPDATE_USE_SSH',  # 添加SSH方式配置

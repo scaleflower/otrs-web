@@ -3,7 +3,7 @@ Production configuration for OTRS Web Application
 """
 
 import os
-from .base import BaseConfig
+from .base import Config as BaseConfig
 
 class ProductionConfig(BaseConfig):
     """Production configuration class"""
