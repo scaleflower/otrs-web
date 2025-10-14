@@ -218,7 +218,8 @@ class ReleasePackageManager:
                 self._validate_members(members, dest_dir)
                 print("✅ Archive validation passed")
                 print("📤 Extracting files...")
-                tar.extractall(dest_dir)
+                # 修复tarfile.extractall安全问题，只提取已验证的成员
+                tar.extractall(dest_dir, members=members)
                 print("✅ Extraction completed")
         except (tarfile.TarError, OSError) as exc:
             raise PackageExtractionError(f"Failed to extract tar archive: {exc}") from exc
@@ -236,7 +237,8 @@ class ReleasePackageManager:
                 self._validate_members(members, dest_dir, zip_mode=True, zip_file=zf)
                 print("✅ Archive validation passed")
                 print("📤 Extracting files...")
-                zf.extractall(dest_dir)
+                # 修复zipfile.extractall安全问题，只提取已验证的成员
+                zf.extractall(dest_dir, members)
                 print("✅ Extraction completed")
         except (zipfile.BadZipFile, OSError) as exc:
             raise PackageExtractionError(f"Failed to extract zip archive: {exc}") from exc

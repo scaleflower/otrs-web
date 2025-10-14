@@ -285,7 +285,23 @@ class YunxiaoReleasePackageManager:
         try:
             with opener(archive_path, mode) as handle:
                 print(f"📂 Extracting to temporary directory: {temp_dir}")
-                handle.extractall(path=temp_dir)
+                # 修复tarfile.extractall安全问题
+                if mode == "r:gz":
+                    members = handle.getmembers()
+                    # 验证成员安全性
+                    for member in members:
+                        member_path = temp_dir / member.name
+                        try:
+                            resolved = member_path.resolve()
+                        except FileNotFoundError:
+                            # Parent directories may not exist yet; resolve parent
+                            resolved = member_path.parent.resolve()
+                        if not str(resolved).startswith(str(temp_dir.resolve())):
+                            raise YunxiaoPackageExtractionError(f"Blocked unsafe path traversal for member: {member.name}")
+                    # 只提取已验证的成员
+                    handle.extractall(path=temp_dir, members=members)
+                else:
+                    handle.extractall(path=temp_dir)
 
                 # GitHub tarballs have a top-level directory like "owner-repo-shorthash"
                 # We want to return the actual code root, not that wrapper dir
