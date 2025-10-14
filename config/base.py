@@ -5,7 +5,7 @@ Base configuration for OTRS Web Application
 import os
 from datetime import timedelta
 
-class BaseConfig:
+class Config:
     """Base configuration class"""
     
     # Application settings
@@ -69,32 +69,23 @@ class BaseConfig:
     # Session settings for password protection
     PERMANENT_SESSION_LIFETIME = timedelta(hours=2)  # 密码认证有效期2小时
 
-    # Auto update settings
-    APP_UPDATE_ENABLED = os.environ.get('APP_UPDATE_ENABLED', 'true').lower() == 'true'
-    APP_UPDATE_REPO = os.environ.get('APP_UPDATE_REPO', 'scaleflower/otrs-web')
-    APP_UPDATE_BRANCH = os.environ.get('APP_UPDATE_BRANCH', 'main')
-    APP_UPDATE_SCRIPT = os.environ.get('APP_UPDATE_SCRIPT', 'scripts/update_app.py')
-    APP_UPDATE_GITHUB_TOKEN = os.environ.get('APP_UPDATE_GITHUB_TOKEN')
-    # 添加阿里云云效支持
-    APP_UPDATE_SOURCE = os.environ.get('APP_UPDATE_SOURCE', 'github')  # github or yunxiao
-    APP_UPDATE_YUNXIAO_TOKEN = os.environ.get('APP_UPDATE_YUNXIAO_TOKEN')
-    # 添加SSH方式支持
-    APP_UPDATE_USE_SSH = os.environ.get('APP_UPDATE_USE_SSH', 'false').lower() == 'true'
-    
-    APP_UPDATE_RESTART_DELAY = int(os.environ.get('APP_UPDATE_RESTART_DELAY', '5'))
+    # Update configuration
+    APP_UPDATE_ENABLED = os.environ.get('APP_UPDATE_ENABLED', 'True').lower() == 'true'
+    APP_UPDATE_REPO = os.environ.get('APP_UPDATE_REPO', 'Jacky/otrs-web')
+    APP_UPDATE_GITHUB_TOKEN = os.environ.get('APP_UPDATE_GITHUB_TOKEN', 'your_github_token_here')
+    APP_UPDATE_POLL_INTERVAL = int(os.environ.get('APP_UPDATE_POLL_INTERVAL', 3600))
     APP_UPDATE_DOWNLOAD_DIR = os.environ.get('APP_UPDATE_DOWNLOAD_DIR')
-    APP_UPDATE_PRESERVE_PATHS = os.environ.get(
-        'APP_UPDATE_PRESERVE_PATHS',
-        '.env,uploads,database_backups,logs,db/otrs_data.db'
-    )
-    APP_UPDATE_INSTALL_DEPENDENCIES = os.environ.get('APP_UPDATE_INSTALL_DEPENDENCIES', 'true').lower() in ['1', 'true', 'yes', 'on']
-    APP_UPDATE_RUN_MIGRATIONS = os.environ.get('APP_UPDATE_RUN_MIGRATIONS', 'true').lower() in ['1', 'true', 'yes', 'on']
-    APP_UPDATE_PIP_ARGS = os.environ.get('APP_UPDATE_PIP_ARGS')
+    APP_UPDATE_PRESERVE_PATHS = os.environ.get('APP_UPDATE_PRESERVE_PATHS')
     APP_UPDATE_MIGRATION_SCRIPTS = os.environ.get('APP_UPDATE_MIGRATION_SCRIPTS')
-
+    APP_UPDATE_RESTART_DELAY = int(os.environ.get('APP_UPDATE_RESTART_DELAY', 5))
+    APP_UPDATE_YUNXIAO_TOKEN = os.environ.get('APP_UPDATE_YUNXIAO_TOKEN')
+    APP_UPDATE_USE_SSH = os.environ.get('APP_UPDATE_USE_SSH', 'False').lower() == 'true'
+    # 更新源配置: github, yunxiao, both
+    APP_UPDATE_SOURCE = os.environ.get('APP_UPDATE_SOURCE', 'github')  # github, yunxiao or both
+    
     @staticmethod
     def init_app(app):
         """Initialize application with this configuration"""
         # Create required directories
-        for folder in [BaseConfig.UPLOAD_FOLDER, BaseConfig.LOG_FOLDER, BaseConfig.BACKUP_FOLDER]:
+        for folder in [Config.UPLOAD_FOLDER, Config.LOG_FOLDER, Config.BACKUP_FOLDER]:
             os.makedirs(folder, exist_ok=True)

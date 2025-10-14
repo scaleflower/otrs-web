@@ -31,6 +31,7 @@ from utils.yunxiao_update_package import (
     YunxiaoPackageExtractionError,
 )
 
+
 class UpdateService:
     """Manage GitHub release polling and local update execution"""
 
@@ -84,13 +85,40 @@ class UpdateService:
         if not self._config('APP_UPDATE_ENABLED', True):
             return {'success': False, 'error': 'Auto-update disabled'}
 
-        # 检查更新源
+        # 检查更新源配置
         update_source = self._config('APP_UPDATE_SOURCE', 'github')
         
-        if update_source == 'yunxiao':
+        # 如果配置为同时检查两个源
+        if update_source == 'both':
+            return self._check_both_updates()
+        elif update_source == 'yunxiao':
             return self._check_yunxiao_updates()
         else:
             return self._check_github_updates()
+
+    def _check_both_updates(self):
+        """同时检查GitHub和云效的更新"""
+        github_result = self._check_github_updates()
+        yunxiao_result = self._check_yunxiao_updates()
+        
+        # 如果任一检查失败，返回错误
+        if not github_result.get('success', False):
+            return github_result
+        if not yunxiao_result.get('success', False):
+            return yunxiao_result
+            
+        # 合并两个结果
+        combined_result = {
+            'success': True,
+            'status': 'multiple_updates_available',
+            'sources': {
+                'github': github_result,
+                'yunxiao': yunxiao_result
+            },
+            'message': '检查完成，可从多个源中选择更新'
+        }
+        
+        return combined_result
 
     def _check_github_updates(self):
         """检查GitHub更新"""
@@ -187,6 +215,7 @@ class UpdateService:
                     'release_notes': payload.get('body'),
                     'release_url': payload.get('html_url'),
                     'published_at': self._format_datetime(payload.get('published_at')),
+                    'source': 'github',
                     'message': f'New version {latest_version} is available!'
                 }
             else:
@@ -197,6 +226,7 @@ class UpdateService:
                     'status': 'up_to_date',
                     'current_version': current_version,
                     'latest_version': latest_version,
+                    'source': 'github',
                     'message': 'You are using the latest version'
                 }
 
@@ -264,6 +294,7 @@ class UpdateService:
                     'release_notes': metadata.body,
                     'release_url': metadata.html_url,
                     'published_at': self._format_datetime(metadata.published_at),
+                    'source': 'yunxiao',
                     'message': f'New version {latest_version} is available!'
                 }
             else:
@@ -274,10 +305,11 @@ class UpdateService:
                     'status': 'up_to_date',
                     'current_version': current_version,
                     'latest_version': latest_version,
+                    'source': 'yunxiao',
                     'message': 'You are using the latest version'
                 }
 
-    def trigger_update(self, target_version: Optional[str] = None, force_reinstall: bool = False):
+    def trigger_update(self, target_version: Optional[str] = None, force_reinstall: bool = False, source: str = 'github'):
         """Kick off background update execution"""
         if not self._config('APP_UPDATE_ENABLED', True):
             raise RuntimeError('Auto-update disabled')
@@ -299,267 +331,41 @@ class UpdateService:
 
             # 检查是否强制重新安装当前版本
             if force_reinstall:
-                print(f"🔄 Forced reinstall of current version: {target}")
-            else:
-                # 正常更新检查：如果目标版本与当前版本相同，不允许更新
-                if target == current_version and not force_reinstall:
-                    raise RuntimeError(f'Already using version {target}. Use force_reinstall=True to reinstall.')
+                print(f"🔄 强制重新安装版本 {target}")
+            elif target_version == current_version:
+                raise RuntimeError(f'Already using version {target_version}. Use force reinstall to reapply')
 
-            # 创建更新日志记录
-            update_log = self._create_update_log(target, current_version, force_reinstall)
-            
-            status.status = 'updating'
-            status.last_update_started_at = datetime.utcnow()
-            status.last_error = None
+            # 记录更新日志
+            update_log = UpdateLog(
+                target_version=target,
+                source=source,  # 记录更新源
+                force_reinstall=force_reinstall
+            )
+            db.session.add(update_log)
             db.session.commit()
 
-            thread = threading.Thread(target=self._run_update_job_with_logging, args=(target, force_reinstall, update_log.update_id), daemon=True)
-            thread.start()
-            self._update_thread = thread
+            # 启动后台更新线程
+            self._update_thread = threading.Thread(
+                target=self._execute_update,
+                args=(target, force_reinstall, source, update_log.id),
+                daemon=True
+            )
+            self._update_thread.start()
+
             return {
-                'message': 'Update started', 
-                'target_version': target, 
-                'force_reinstall': force_reinstall,
-                'update_id': update_log.update_id
+                'success': True,
+                'message': f'Update to version {target} started',
+                'update_log_id': update_log.id
             }
 
-    def is_update_running(self) -> bool:
-        thread = self._update_thread
-        return bool(thread and thread.is_alive())
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-    def _record_error(self, message):
-        with self._ensure_app_context():
-            status = AppUpdateStatus.query.first()
-            if not status:
-                status = AppUpdateStatus(current_version=self._config('APP_VERSION', '0.0.0'))
-                db.session.add(status)
-            status.last_error = message[:2000]
-            status.last_checked_at = datetime.utcnow()
-            if status.status != 'updating':
-                status.status = 'error'
-            db.session.commit()
-
-    def _ensure_app_context(self):
-        if not self.app:
-            raise RuntimeError('UpdateService is not initialized with Flask app')
-        return self.app.app_context()
-
-    @staticmethod
-    def _parse_datetime(value):
-        if not value:
-            return None
-        try:
-            if value.endswith('Z'):
-                value = value.replace('Z', '+00:00')
-            return datetime.fromisoformat(value)
-        except ValueError:
-            return None
-
-    @staticmethod
-    def _format_datetime(value):
-        """Format datetime for API response"""
-        if not value:
-            return None
-        try:
-            if isinstance(value, datetime):
-                return value.isoformat()
-            elif isinstance(value, str):
-                # Parse and reformat
-                parsed = UpdateService._parse_datetime(value)
-                return parsed.isoformat() if parsed else value
-            return str(value)
-        except:
-            return str(value) if value else None
-
-    @staticmethod
-    def _compare_versions(current, latest):
-        """比较语义化版本号，使用packaging库进行可靠比较"""
-        if current == latest:
-            return False  # 版本相同，不需要更新
-        
-        try:
-            # 使用packaging.version进行版本比较
-            current_ver = version.parse(current)
-            latest_ver = version.parse(latest)
-            return latest_ver > current_ver
-        except version.InvalidVersion:
-            # 如果无法解析为标准版本号，回退到原始比较逻辑
-            # 清理版本号，提取数字版本部分
-            def clean_version(version_str):
-                if not version_str:
-                    return "0.0.0"
-                
-                # 移除所有非数字和点号的前缀和后缀
-                # 支持格式: v1.2.3, release/v1.2.6, 1.2.3-beta, etc.
-                version_str = str(version_str).strip()
-                
-                # 查找版本号模式：数字.数字.数字
-                match = re.search(r'(\d+\.\d+\.\d+)', version_str)
-                if match:
-                    return match.group(1)
-                
-                # 如果没有找到完整的三段版本号，尝试查找两段或一段
-                match = re.search(r'(\d+\.\d+)', version_str)
-                if match:
-                    return match.group(1) + '.0'
-                
-                match = re.search(r'(\d+)', version_str)
-                if match:
-                    return match.group(1) + '.0.0'
-                
-                return "0.0.0"
-            
-            current_clean = clean_version(current)
-            latest_clean = clean_version(latest)
-            
-            # 如果清理后的版本相同，则不需要更新
-            if current_clean == latest_clean:
-                return False
-            
-            # 分割版本号为数字部分
-            def parse_version_parts(version_str):
-                parts = version_str.split('.')
-                parsed = []
-                for part in parts:
-                    try:
-                        parsed.append(int(part))
-                    except ValueError:
-                        parsed.append(0)
-                # 确保至少有3个部分
-                while len(parsed) < 3:
-                    parsed.append(0)
-                return parsed
-            
-            try:
-                current_parts = parse_version_parts(current_clean)
-                latest_parts = parse_version_parts(latest_clean)
-                
-                # 逐级比较版本号
-                for i in range(max(len(current_parts), len(latest_parts))):
-                    current_part = current_parts[i] if i < len(current_parts) else 0
-                    latest_part = latest_parts[i] if i < len(latest_parts) else 0
-                    
-                    if latest_part > current_part:
-                        return True  # 有更新
-                    elif latest_part < current_part:
-                        return False  # 版本回退，不更新
-                
-                return False  # 版本相同
-            except:
-                # 如果解析失败，回退到字符串比较
-                # 对于复杂版本格式，如果清理后的版本不同，应该允许更新
-                return latest_clean != current_clean
-
-    def _schedule_restart(self, delay_seconds):
-        """Schedule application restart after successful update"""
-        def restart_application():
-            try:
-                print(f"🔄 Application restart scheduled in {delay_seconds} seconds...")
-                time.sleep(delay_seconds)
-                
-                # Log restart attempt
-                print("🚀 Attempting application restart...")
-                
-                # Get current process information
-                current_pid = os.getpid()
-                current_script = sys.argv[0] if sys.argv else 'app.py'
-                
-                # Check if we're in development mode (Flask debug mode)
-                is_development = self._config('DEBUG', False) or self._config('ENV') == 'development'
-                
-                if is_development:
-                    print("🔧 Development mode detected - using subprocess restart")
-                    # In development mode, use subprocess to start new instance
-                    subprocess.Popen([
-                        sys.executable, current_script
-                    ], cwd=os.getcwd())
-                    # Give new process time to start
-                    time.sleep(3)
-                    # Exit current process gracefully
-                    print("✅ New process started, exiting current process...")
-                    os._exit(0)
-                elif sys.platform == "win32":
-                    # Windows restart logic for production
-                    print("🖥️  Windows platform detected")
-                    subprocess.Popen([
-                        sys.executable, current_script
-                    ], cwd=os.getcwd())
-                    time.sleep(2)
-                    os.kill(current_pid, signal.SIGTERM)
-                else:
-                    # Linux/macOS restart logic for production
-                    print("🐧 Unix-like platform detected")
-                    os.execv(sys.executable, [sys.executable, current_script])
-                    
-            except Exception as e:
-                print(f"❌ Restart failed: {e}")
-                # Log the error but don't crash the update service
-                try:
-                    with self._ensure_app_context():
-                        status = AppUpdateStatus.query.first()
-                        if status:
-                            status.last_error = f"Restart failed: {str(e)[:2000]}"
-                            db.session.commit()
-                except:
-                    pass
-        
-        # Start restart timer in background thread
-        self._restart_timer = threading.Thread(target=restart_application, daemon=True)
-        self._restart_timer.start()
-        print(f"✅ Restart scheduled in {delay_seconds} seconds")
-
-    def _create_update_log(self, target_version: str, current_version: str, force_reinstall: bool) -> UpdateLog:
-        """Create a new update log record"""
-        update_id = str(uuid.uuid4())
-        
-        update_log = UpdateLog(
-            update_id=update_id,
-            target_version=target_version,
-            current_version=current_version,
-            force_reinstall=force_reinstall,
-            system_platform=sys.platform,
-            python_version=sys.version.split()[0]
-        )
-        
-        # Define update steps
-        update_steps = [
-            (UpdateLogStep.BACKUP_DATABASE.value, "备份数据库", 1),
-            (UpdateLogStep.FETCH_REPOSITORY.value, "获取版本元数据", 2),
-            (UpdateLogStep.CHECKOUT_VERSION.value, "下载更新包", 3),
-            (UpdateLogStep.PULL_CHANGES.value, "同步更新文件", 4),
-            (UpdateLogStep.INSTALL_DEPENDENCIES.value, "安装依赖包", 5),
-            (UpdateLogStep.RUN_MIGRATIONS.value, "执行数据库迁移", 6),
-            (UpdateLogStep.RESTART_APPLICATION.value, "重启应用程序", 7)
-        ]
-        
-        update_log.total_steps = len(update_steps)
-        
-        db.session.add(update_log)
-        db.session.commit()
-        
-        # Create step records
-        for step_name, step_description, step_order in update_steps:
-            step_log = UpdateStepLog(
-                update_log_id=update_log.id,
-                step_name=step_name,
-                step_order=step_order
-            )
-            db.session.add(step_log)
-        
-        db.session.commit()
-        return update_log
-
-    def _run_update_job_with_logging(self, target_version: str, force_reinstall: bool, update_id: str):
-        """Run update job with detailed logging"""
+    def _execute_update(self, target_version: str, force_reinstall: bool, source: str, update_log_id: str):
+        """Execute the actual update process in background thread"""
         with self._ensure_app_context():
             try:
                 # Get update log
-                update_log = UpdateLog.query.filter_by(update_id=update_id).first()
+                update_log = UpdateLog.query.filter_by(id=update_log_id).first()
                 if not update_log:
-                    print(f"❌ Update log not found for update_id: {update_id}")
+                    print(f"❌ Update log not found for id: {update_log_id}")
                     return
                 
                 # Update system information
@@ -568,21 +374,21 @@ class UpdateService:
                 db.session.commit()
                 
                 # Execute update with logging
-                self._execute_update_with_logging(target_version, force_reinstall, update_log)
+                self._execute_update_with_logging(target_version, force_reinstall, source, update_log)
                 
             except Exception as e:
                 print(f"❌ Update job failed: {e}")
                 import traceback
                 traceback.print_exc()
                 try:
-                    update_log = UpdateLog.query.filter_by(update_id=update_id).first()
+                    update_log = UpdateLog.query.filter_by(id=update_log_id).first()
                     if update_log:
                         update_log.mark_failed(f"Update job execution failed: {str(e)}")
                         db.session.commit()
                 except:
                     pass
 
-    def _execute_update_with_logging(self, target_version: str, force_reinstall: bool, update_log: UpdateLog):
+    def _execute_update_with_logging(self, target_version: str, force_reinstall: bool, source: str, update_log: UpdateLog):
         """Execute update with detailed step logging"""
         repo = self._config('APP_UPDATE_REPO')
         project_root = Path.cwd()
@@ -695,8 +501,119 @@ class UpdateService:
             traceback.print_exc()
             self._finalize_failure_with_logging(update_log, f'Update execution error: {err}')
 
-    def _update_step_status(self, update_log: UpdateLog, step_name: str, output: str = None):
-        """Update step status in the log"""
+    def is_update_running(self):
+        """Check if an update is currently running"""
+        thread = self._update_thread
+        return bool(thread and thread.is_alive())
+
+    def _ensure_app_context(self):
+        """Ensure we have a Flask app context"""
+        if not self.app:
+            raise RuntimeError('UpdateService is not initialized with Flask app')
+        return self.app.app_context()
+
+    @staticmethod
+    def _parse_datetime(value):
+        """Parse datetime from string"""
+        if not value:
+            return None
+        try:
+            if value.endswith('Z'):
+                value = value.replace('Z', '+00:00')
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _format_datetime(value):
+        """Format datetime for API response"""
+        if not value:
+            return None
+        try:
+            if isinstance(value, datetime):
+                return value.isoformat()
+            elif isinstance(value, str):
+                # Parse and reformat
+                parsed = UpdateService._parse_datetime(value)
+                return parsed.isoformat() if parsed else value
+            return str(value)
+        except:
+            return str(value) if value else None
+
+    @staticmethod
+    def _compare_versions(current, latest):
+        """比较语义化版本号，使用packaging库进行可靠比较"""
+        if current == latest:
+            return False  # 版本相同，不需要更新
+        
+        try:
+            # 使用packaging.version进行版本比较
+            current_ver = version.parse(current)
+            latest_ver = version.parse(latest)
+            return latest_ver > current_ver
+        except version.InvalidVersion:
+            # 如果无法解析为标准版本号，回退到原始比较逻辑
+            # 清理版本号，提取数字版本部分
+            def clean_version(version):
+                if not version:
+                    return "0.0.0"
+                
+                # 移除所有非数字和点号的前缀和后缀
+                # 支持格式: v1.2.3, release/v1.2.6, 1.2.3-beta, etc.
+                version_str = str(version).strip()
+                
+                # 查找版本号模式：数字.数字.数字
+                match = re.search(r'(\d+\.\d+\.\d+)', version_str)
+                if match:
+                    return match.group(1)
+                
+                # 如果没有找到完整的三段版本号，尝试查找两段或一段
+                match = re.search(r'(\d+\.\d+)', version_str)
+                if match:
+                    return match.group(1) + '.0'
+                
+                match = re.search(r'(\d+)', version_str)
+                if match:
+                    return match.group(1) + '.0.0'
+                
+                return "0.0.0"
+            
+            current_clean = clean_version(current)
+            latest_clean = clean_version(latest)
+            
+            # 如果清理后的版本相同，则不需要更新
+            if current_clean == latest_clean:
+                return False
+            
+            # 分割版本号为数字部分
+            current_parts = [int(x) for x in current_clean.split('.')]
+            latest_parts = [int(x) for x in latest_clean.split('.')]
+            
+            # 按段比较版本号
+            for current_part, latest_part in zip(current_parts, latest_parts):
+                if latest_part > current_part:
+                    return True
+                if latest_part < current_part:
+                    return False
+            
+            # 如果前面的段都相同，但latest有更多段，则认为是更新的版本
+            return len(latest_parts) > len(current_parts)
+
+    def _record_error(self, message: str):
+        """Record error in update status"""
+        with self._ensure_app_context():
+            status = AppUpdateStatus.query.first()
+            if not status:
+                status = AppUpdateStatus(current_version=self._config('APP_VERSION', '0.0.0'))
+                db.session.add(status)
+            status.last_error = message[:2000]
+            status.last_checked_at = datetime.utcnow()
+            if status.status != 'updating':
+                status.status = 'error'
+            db.session.commit()
+
+    def _update_step_status(self, update_log: UpdateLog, step_name: str, output: str = ''):
+        """Update step status in update log"""
         step_log = UpdateStepLog.query.filter_by(
             update_log_id=update_log.id, 
             step_name=step_name
@@ -707,6 +624,10 @@ class UpdateService:
             update_log.completed_steps += 1
             db.session.commit()
             print(f"✅ Step completed: {step_name}")
+
+    def _mark_step_completed(self, update_log: UpdateLog, step_name: str, output: str = ''):
+        """Mark step as completed in update log"""
+        self._update_step_status(update_log, step_name, output)
 
     def _resolve_download_dir(self, project_root: Path) -> Path:
         """Resolve download directory from configuration"""
@@ -829,7 +750,7 @@ class UpdateService:
     def get_update_log_details(self, update_id: str) -> Optional[Dict]:
         """Get detailed update log with steps"""
         with self._ensure_app_context():
-            log = UpdateLog.query.filter_by(update_id=update_id).first()
+            log = UpdateLog.query.filter_by(id=update_id).first()
             if not log:
                 return None
             
@@ -838,6 +759,7 @@ class UpdateService:
             return log_data
 
     def _config(self, key, default=None):
+        """Get configuration value"""
         if self.app:
             return self.app.config.get(key, default)
         return current_app.config.get(key, default)
