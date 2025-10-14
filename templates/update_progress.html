@@ -172,7 +172,7 @@
             }
             
             try {
-                const response = await fetch(`/update/progress/${updateLogId}`);
+                const response = await fetch(`/update/api/progress/${updateLogId}`);
                 const result = await response.json();
                 
                 if (result.success && result.progress) {

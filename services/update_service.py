@@ -501,7 +501,6 @@ class UpdateService:
 
         try:
             # Step 1: backup database
-            self._send_step_start_event(update_log, UpdateLogStep.BACKUP_DATABASE.value)
             backup_candidates = [
                 project_root / 'db' / 'otrs_data.db',
                 project_root / 'instance' / 'otrs_web.db',
@@ -512,7 +511,6 @@ class UpdateService:
             self._update_step_status(update_log, UpdateLogStep.BACKUP_DATABASE.value, backup_message)
 
             # Step 2: fetch release metadata
-            self._send_step_start_event(update_log, UpdateLogStep.FETCH_REPOSITORY.value)
             metadata = manager.fetch_release_metadata(target_version)
             resolved_target = metadata.tag_name or target_version
             if resolved_target and update_log.target_version != resolved_target:
@@ -533,7 +531,6 @@ class UpdateService:
             )
 
             # Step 3: download archive
-            self._send_step_start_event(update_log, UpdateLogStep.CHECKOUT_VERSION.value)
             archive_path = manager.download_release_archive(metadata, resolved_target)
             self._update_step_status(
                 update_log,
@@ -542,7 +539,6 @@ class UpdateService:
             )
 
             # Step 4: extract and sync files
-            self._send_step_start_event(update_log, UpdateLogStep.PULL_CHANGES.value)
             source_root = manager.extract_archive(archive_path)
             manager.sync_to_project(source_root)
             self._update_step_status(
@@ -552,7 +548,6 @@ class UpdateService:
             )
 
             # Step 5: install dependencies (optional)
-            self._send_step_start_event(update_log, UpdateLogStep.INSTALL_DEPENDENCIES.value)
             install_deps = self._config_bool('APP_UPDATE_INSTALL_DEPENDENCIES', default=True)
             if install_deps:
                 pip_command = [sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt']
@@ -570,7 +565,6 @@ class UpdateService:
             )
 
             # Step 6: run migrations (optional)
-            self._send_step_start_event(update_log, UpdateLogStep.RUN_MIGRATIONS.value)
             run_migrations = self._config_bool('APP_UPDATE_RUN_MIGRATIONS', default=True)
             migration_outputs = []
             if run_migrations:
@@ -598,28 +592,6 @@ class UpdateService:
             import traceback
             traceback.print_exc()
             self._finalize_failure_with_logging(update_log, f'Update execution error: {err}')
-
-    def _send_step_start_event(self, update_log: UpdateLog, step_name: str):
-        """Send step start event for real-time updates"""
-        try:
-            import json
-            from pathlib import Path
-            
-            progress_dir = Path('db') / 'update_progress'
-            progress_dir.mkdir(exist_ok=True)
-            
-            progress_file = progress_dir / f"{update_log.id}.json"
-            progress_data = {
-                'update_log_id': update_log.id,
-                'step_name': step_name,
-                'status': 'started',
-                'timestamp': datetime.utcnow().isoformat()
-            }
-            
-            with open(progress_file, 'w', encoding='utf-8') as f:
-                json.dump(progress_data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"⚠️ Warning: Failed to send step start event: {e}")
 
     def is_update_running(self):
         """Check if an update is currently running"""
