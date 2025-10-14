@@ -2,6 +2,26 @@
 
 echo "🚀 Pushing to both GitHub and Yunxiao repositories..."
 
+# 检查是否有未跟踪或修改过的文件
+if [[ -n $(git status --porcelain) ]]; then
+    echo "📁 Changes detected, adding and committing files..."
+    
+    # 添加所有更改到暂存区
+    git add .
+    
+    # 提交更改
+    git commit -m "Auto-commit: Update files before pushing to remote repositories"
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ Changes successfully committed"
+    else
+        echo "❌ Failed to commit changes"
+        exit 1
+    fi
+else
+    echo "✅ No changes to commit"
+fi
+
 # 获取当前分支名
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
@@ -31,23 +51,14 @@ elif command -v gh &> /dev/null && gh auth status > /dev/null 2>&1; then
     git push "https://x-access-token:$TEMP_TOKEN@github.com/scaleflower/otrs-web.git" $BRANCH
     
     if [ $? -eq 0 ]; then
-        echo "✅ Successfully pushed to GitHub via HTTPS using CLI token"
+        echo "✅ Successfully pushed to GitHub via HTTPS"
     else
-        echo "❌ Failed to push to GitHub using CLI token"
+        echo "❌ Failed to push to GitHub"
         exit 1
     fi
 else
-    # 如果SSH和CLI都不可用，尝试配置好的HTTPS远程
-    echo "🔄 SSH and CLI failed, trying configured HTTPS remote..."
-    git push github-https $BRANCH
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Successfully pushed to GitHub via HTTPS"
-    else
-        echo "❌ Failed to push to GitHub via HTTPS"
-        echo "💡 Please check your GitHub credentials and access rights"
-        exit 1
-    fi
+    echo "❌ Failed to push to GitHub"
+    exit 1
 fi
 
 echo "🎉 Successfully pushed to both repositories!"
