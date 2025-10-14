@@ -221,8 +221,25 @@ class ReleasePackageManager:
                 safe_members = validate_members(members, dest_dir)
                 print("✅ Archive validation passed")
                 print("📤 Extracting files...")
-                # 修复tarfile.extractall安全问题，只提取已验证的成员
-                tar.extractall(dest_dir, members=safe_members)
+                # 手动提取tar成员以增强安全性，避免使用extractall方法
+                for member in safe_members:
+                    member_path = dest_dir / member.name
+                    if member.isdir():
+                        member_path.mkdir(parents=True, exist_ok=True)
+                        continue
+                    if not member.isfile():
+                        continue
+                    member_path.parent.mkdir(parents=True, exist_ok=True)
+                    extracted = tar.extractfile(member)
+                    if extracted is None:
+                        continue
+                    with extracted, member_path.open("wb") as target_handle:
+                        shutil.copyfileobj(extracted, target_handle)
+                    if member.mode:
+                        try:
+                            os.chmod(member_path, member.mode)
+                        except OSError:
+                            pass
                 print("✅ Extraction completed")
         except (tarfile.TarError, OSError) as exc:
             raise PackageExtractionError(f"Failed to extract tar archive: {exc}") from exc
@@ -242,8 +259,22 @@ class ReleasePackageManager:
                 safe_members = validate_members(members, dest_dir, zip_mode=True)
                 print("✅ Archive validation passed")
                 print("📤 Extracting files...")
-                # 修复zipfile.extractall安全问题，只提取已验证的成员
-                zf.extractall(dest_dir, safe_members)
+                # 手动提取zip成员以增强安全性，避免使用extractall方法
+                for member in safe_members:
+                    name = member.filename
+                    member_path = dest_dir / name
+                    if member.is_dir():
+                        member_path.mkdir(parents=True, exist_ok=True)
+                        continue
+                    member_path.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(member, "r") as source, member_path.open("wb") as target:
+                        shutil.copyfileobj(source, target)
+                    perm = member.external_attr >> 16
+                    if perm:
+                        try:
+                            os.chmod(member_path, perm)
+                        except OSError:
+                            pass
                 print("✅ Extraction completed")
         except (zipfile.BadZipFile, OSError) as exc:
             raise PackageExtractionError(f"Failed to extract zip archive: {exc}") from exc
