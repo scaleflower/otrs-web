@@ -73,8 +73,9 @@ def require_daily_stats_password(f):
         
         # Get expected password from config
         expected_password = os.environ.get('DAILY_STATS_PASSWORD') or 'Enabling@2025'
+        admin_password = system_config_service.get_config_value('ADMIN_PASSWORD', 'admin@2025')
         
-        if password and password == expected_password:
+        if password and (password == expected_password or password == admin_password):
             # Set session for 2 hours
             PasswordProtection.authenticate_session()
             return f(*args, **kwargs)
