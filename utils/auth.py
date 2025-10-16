@@ -60,8 +60,14 @@ def require_daily_stats_password(f):
             return f(*args, **kwargs)
         
         # Check if password is provided in request
+        password = None
         if request.method == 'POST':
-            password = request.form.get('password') or request.json.get('password') if request.is_json else None
+            # 修复：正确处理JSON和表单数据
+            if request.is_json:
+                data = request.get_json()
+                password = data.get('password') if data else None
+            else:
+                password = request.form.get('password')
         else:
             password = request.args.get('password')
         
@@ -74,7 +80,7 @@ def require_daily_stats_password(f):
             return f(*args, **kwargs)
         
         # Return password form
-        if request.is_json:
+        if request.is_json or request.headers.get('Content-Type') == 'application/json':
             return jsonify({
                 'error': 'Password required',
                 'message': 'Please provide password in request'
@@ -102,8 +108,14 @@ def require_admin_password(f):
             session.pop('admin_auth_time', None)
         
         # Check if password is provided in request
+        password = None
         if request.method == 'POST':
-            password = request.form.get('admin_password') or request.json.get('admin_password') if request.is_json else None
+            # 修复：正确处理JSON和表单数据
+            if request.is_json:
+                data = request.get_json()
+                password = data.get('admin_password') if data else None
+            else:
+                password = request.form.get('admin_password')
         else:
             password = request.args.get('admin_password')
         
@@ -117,7 +129,7 @@ def require_admin_password(f):
             return f(*args, **kwargs)
         
         # Return admin password form
-        if request.is_json:
+        if request.is_json or request.headers.get('Content-Type') == 'application/json':
             return jsonify({
                 'error': 'Admin password required',
                 'message': 'Please provide admin password in request'
