@@ -72,18 +72,11 @@ def execute_update():
     """Execute application update"""
     try:
         data = request.get_json() if request.is_json else request.form
-        password = data.get('password')
         target_version = data.get('target_version')
         force_reinstall = data.get('force_reinstall', False)
         source = data.get('source', 'github')  # 支持指定更新源
-        
-        # 验证密码
-        if not password:
-            return jsonify({'error': 'Password required'}), 400
-            
-        from utils.auth import PasswordProtection
-        if not PasswordProtection.verify_password(password):
-            return jsonify({'error': 'Invalid password'}), 401
+
+        # 密码验证已由装饰器 @require_daily_stats_password 处理，这里不需要重复验证
 
         # 触发更新
         result = update_service.trigger_update(
@@ -91,14 +84,14 @@ def execute_update():
             force_reinstall=force_reinstall,
             source=source
         )
-        
+
         if result['success']:
             # 重定向到进度页面而不是返回JSON
             from flask import redirect, url_for
             return redirect(url_for('update.update_progress', update_log_id=result['update_log_id']))
         else:
             return jsonify(result), 400
-            
+
     except Exception as e:
         import traceback
         traceback.print_exc()

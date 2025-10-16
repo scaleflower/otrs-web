@@ -950,7 +950,7 @@ async function triggerUpdateFromModal() {
             },
             body: JSON.stringify({
                 target_version: updateStatusData.latest_version,
-                auth_password: password
+                password: password
             })
         });
 
@@ -1208,7 +1208,7 @@ async function triggerForceReinstallFromModal() {
             },
             body: JSON.stringify({
                 target_version: updateStatusData.current_version,
-                auth_password: password
+                password: password
             })
         });
 
