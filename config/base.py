@@ -10,7 +10,7 @@ class Config:
     
     # Application settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
-    APP_VERSION = os.environ.get('APP_VERSION') or "1.2.3"
+    APP_VERSION = os.environ.get('APP_VERSION') or "1.2.9"
     
     # Database settings
     # 支持SQLite（默认）和PostgreSQL

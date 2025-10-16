@@ -1,3 +1,9 @@
+# OTRS Web Application v1.2.9
+
+## 发布说明
+
+- 解决自动升级相关问题
+
 # OTRS Web Application v1.0.8
 
 ## 主要更新内容

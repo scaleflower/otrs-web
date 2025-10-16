@@ -70,7 +70,7 @@ if app.config.get('APP_UPDATE_ENABLED', True):
         app.logger.warning('Initial update check failed: %s', exc)
 
 # Application version from config
-APP_VERSION = app.config.get('APP_VERSION', '1.2.3')
+APP_VERSION = app.config.get('APP_VERSION', '1.2.9')
 
 @app.route('/')
 def index():
