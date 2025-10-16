@@ -396,6 +396,19 @@
 
             <!-- Update Actions (Shown by default) -->
             <div class="update-actions" id="updateActions">
+                <!-- Password Input Section -->
+                <div style="margin-bottom: 1.5rem;">
+                    <label for="adminPassword" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.9rem;">
+                        <i class="fas fa-lock"></i> 管理员密码
+                    </label>
+                    <input
+                        type="password"
+                        id="adminPassword"
+                        placeholder="请输入管理员密码以继续更新"
+                        style="width: 100%; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.3); background: rgba(0, 0, 0, 0.2); color: var(--text-primary); font-size: 1rem;"
+                    />
+                </div>
+
                 <div class="action-buttons">
                     <button class="btn btn-primary" id="startUpdateBtn" disabled>
                         <i class="fas fa-download"></i>
@@ -515,6 +528,16 @@
                 return;
             }
 
+            // Get and validate password
+            const passwordInput = document.getElementById('adminPassword');
+            const password = passwordInput ? passwordInput.value.trim() : '';
+
+            if (!password) {
+                showStatus('error', '请先输入管理员密码');
+                if (passwordInput) passwordInput.focus();
+                return;
+            }
+
             isUpdating = true;
 
             // Show progress UI
@@ -530,13 +553,23 @@
                     body: JSON.stringify({
                         target_version: updateData.latest_version,
                         force_reinstall: false,
-                        source: updateData.update_source || 'github'
+                        source: updateData.update_source || 'github',
+                        password: password
                     })
                 });
+
+                // Check for authentication error
+                if (response.status === 401) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || '密码错误，请检查后重试');
+                }
 
                 if (response.redirected) {
                     // Follow the redirect to progress page
                     window.location.href = response.url;
+                } else if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '更新启动失败');
                 } else {
                     const result = await response.json();
 
@@ -549,7 +582,7 @@
                 }
             } catch (error) {
                 console.error('Failed to start update:', error);
-                showStatus('error', '更新启动失败: ' + error.message);
+                showStatus('error', error.message || '更新启动失败');
 
                 // Reset UI
                 isUpdating = false;

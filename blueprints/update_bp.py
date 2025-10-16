@@ -71,6 +71,7 @@ def api_acknowledge_update():
         return jsonify({'error': str(e)}), 500
 
 @update_bp.route('/execute', methods=['POST'])
+@require_daily_stats_password
 def execute_update():
     """Execute application update"""
     try:
