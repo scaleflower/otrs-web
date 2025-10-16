@@ -451,100 +451,97 @@ class UpdateService:
         except Exception as e:
             print(f"⚠️ Warning: Failed to send update start event: {e}")
 
-    def _execute_update(self, target_version: str, force_reinstall: bool, source: str, update_log_id: str):
+    def _execute_update(self, target_version: str, force_reinstall: bool, source: str, update_log_id: int):
         """Execute the actual update process in background thread"""
-        with self._ensure_app_context():
-            def _create_full_backup(self, project_root: Path, backup_dir: Path) -> Optional[Path]:
-                """Create a full backup of the application before updating"""
-                try:
-                    import tarfile
-                    from datetime import datetime
-                    
-                    # 创建备份目录
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                    
-                    # 生成备份文件名
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    backup_filename = f"full_backup_{timestamp}.tar.gz"
-                    backup_path = backup_dir / backup_filename
-                    
-                    print(f"💾 Creating full application backup: {backup_path}")
-                    
-                    # 确定要排除的目录/文件
-                    exclude_patterns = {
-                        '__pycache__',
-                        '.git',
-                        '.pytest_cache',
-                        '.vscode',
-                        '.idea',
-                        'database_backups',
-                        'db/update_progress',
-                        '*.pyc',
-                        '*.pyo',
-                        '*.log'
-                    }
-                    
-                    def should_exclude(path: Path) -> bool:
-                        """Check if a path should be excluded from backup"""
-                        # 检查路径中的任何部分是否匹配排除模式
-                        for part in path.parts:
-                            if part in exclude_patterns:
-                                return True
-                            # 检查文件扩展名
-                            for pattern in exclude_patterns:
-                                if pattern.startswith('*.') and path.name.endswith(pattern[1:]):
-                                    return True
-                        return False
-                    
-                    # 创建tar.gz备份文件
-                    with tarfile.open(backup_path, "w:gz") as tar:
-                        for file_path in project_root.rglob('*'):
-                            # 跳过目录本身
-                            if file_path == project_root:
-                                continue
-                            
-                            # 检查是否应该排除
-                            relative_path = file_path.relative_to(project_root)
-                            if should_exclude(relative_path):
-                                continue
-                            
-                            # 添加文件到备份
-                            try:
-                                arcname = relative_path.as_posix()
-                                tar.add(file_path, arcname=arcname)
-                            except (OSError, IOError) as e:
-                                print(f"⚠️ Warning: Could not add {file_path} to backup: {e}")
-                                continue
-                    
-                    print(f"✅ Full backup completed: {backup_path}")
-                    return backup_path
-                    
-                except Exception as e:
-                    print(f"❌ Full backup failed: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    return None
-            
-            def _execute_update(self, target_version: str, force_reinstall: bool, source: str, update_log_id: int):
-                """Execute update in background thread"""
-                try:
-                    with self.app.app_context():
-                        update_log = UpdateLog.query.filter_by(id=update_log_id).first()
-                        if not update_log:
-                            raise RuntimeError('Update log not found')
-            
-                        self._execute_update_with_logging(target_version, force_reinstall, source, update_log)
-                except Exception as e:
-                    print(f"❌ Update job failed: {e}")
-                    import traceback
-                    traceback.print_exc()
+        try:
+            with self.app.app_context():
+                update_log = UpdateLog.query.filter_by(id=update_log_id).first()
+                if not update_log:
+                    raise RuntimeError('Update log not found')
+
+                self._execute_update_with_logging(target_version, force_reinstall, source, update_log)
+        except Exception as e:
+            print(f"❌ Update job failed: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                with self.app.app_context():
+                    update_log = UpdateLog.query.filter_by(id=update_log_id).first()
+                    if update_log:
+                        update_log.mark_failed(f"Update job execution failed: {str(e)}")
+                        db.session.commit()
+            except:
+                pass
+
+    def _create_full_backup(self, project_root: Path, backup_dir: Path) -> Optional[Path]:
+        """Create a full backup of the application before updating"""
+        try:
+            import tarfile
+
+            # 创建备份目录
+            backup_dir.mkdir(parents=True, exist_ok=True)
+
+            # 生成备份文件名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"full_backup_{timestamp}.tar.gz"
+            backup_path = backup_dir / backup_filename
+
+            print(f"💾 Creating full application backup: {backup_path}")
+
+            # 确定要排除的目录/文件
+            exclude_patterns = {
+                '__pycache__',
+                '.git',
+                '.pytest_cache',
+                '.vscode',
+                '.idea',
+                'database_backups',
+                'db/update_progress',
+                '*.pyc',
+                '*.pyo',
+                '*.log'
+            }
+
+            def should_exclude(path: Path) -> bool:
+                """Check if a path should be excluded from backup"""
+                # 检查路径中的任何部分是否匹配排除模式
+                for part in path.parts:
+                    if part in exclude_patterns:
+                        return True
+                    # 检查文件扩展名
+                    for pattern in exclude_patterns:
+                        if pattern.startswith('*.') and path.name.endswith(pattern[1:]):
+                            return True
+                return False
+
+            # 创建tar.gz备份文件
+            with tarfile.open(backup_path, "w:gz") as tar:
+                for file_path in project_root.rglob('*'):
+                    # 跳过目录本身
+                    if file_path == project_root:
+                        continue
+
+                    # 检查是否应该排除
+                    relative_path = file_path.relative_to(project_root)
+                    if should_exclude(relative_path):
+                        continue
+
+                    # 添加文件到备份
                     try:
-                        update_log = UpdateLog.query.filter_by(id=update_log_id).first()
-                        if update_log:
-                            update_log.mark_failed(f"Update job execution failed: {str(e)}")
-                            db.session.commit()
-                    except:
-                        pass
+                        arcname = relative_path.as_posix()
+                        tar.add(file_path, arcname=arcname)
+                    except (OSError, IOError) as e:
+                        print(f"⚠️ Warning: Could not add {file_path} to backup: {e}")
+                        continue
+
+            print(f"✅ Full backup completed: {backup_path}")
+            return backup_path
+
+        except Exception as e:
+            print(f"❌ Full backup failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     def _execute_update_with_logging(self, target_version: str, force_reinstall: bool, source: str, update_log: UpdateLog):
         """Execute update with detailed step logging"""

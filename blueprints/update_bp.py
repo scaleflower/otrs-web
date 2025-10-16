@@ -7,6 +7,11 @@ from utils.auth import require_daily_stats_password
 
 update_bp = Blueprint('update', __name__, url_prefix='/update')
 
+@update_bp.route('/available')
+def update_available():
+    """Update available notification page"""
+    return render_template('update_available.html')
+
 @update_bp.route('/progress/<int:update_log_id>')
 def update_progress(update_log_id):
     """Real-time update progress page"""
@@ -48,7 +53,6 @@ def api_update_status():
         return jsonify({'error': str(e)}), 500
 
 @update_bp.route('/check', methods=['POST'])
-@require_daily_stats_password
 def api_check_for_updates():
     """Manually check for application updates"""
     try:
@@ -67,7 +71,6 @@ def api_acknowledge_update():
         return jsonify({'error': str(e)}), 500
 
 @update_bp.route('/execute', methods=['POST'])
-@require_daily_stats_password
 def execute_update():
     """Execute application update"""
     try:
@@ -75,8 +78,6 @@ def execute_update():
         target_version = data.get('target_version')
         force_reinstall = data.get('force_reinstall', False)
         source = data.get('source', 'github')  # 支持指定更新源
-
-        # 密码验证已由装饰器 @require_daily_stats_password 处理，这里不需要重复验证
 
         # 触发更新
         result = update_service.trigger_update(
@@ -98,13 +99,12 @@ def execute_update():
         return jsonify({'error': str(e)}), 500
 
 @update_bp.route('/execute/<source>/<target_version>', methods=['POST'])
-@require_daily_stats_password
 def api_execute_update_from_source(source, target_version):
     """Execute application update from specific source and version"""
     try:
         data = request.get_json()
         force = data.get('force', False) if data else False
-        
+
         result = update_service.trigger_update(target_version=target_version, force_reinstall=force, source=source)
         return jsonify(result)
     except Exception as e:
