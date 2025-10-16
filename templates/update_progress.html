@@ -125,12 +125,13 @@
         // Step definitions
         const updateSteps = [
             {name: 'backup_database', title: '备份数据库', order: 1},
-            {name: 'fetch_repository', title: '获取版本元数据', order: 2},
-            {name: 'checkout_version', title: '下载更新包', order: 3},
-            {name: 'pull_changes', title: '同步更新文件', order: 4},
-            {name: 'install_dependencies', title: '安装依赖包', order: 5},
-            {name: 'run_migrations', title: '执行数据库迁移', order: 6},
-            {name: 'restart_application', title: '重启应用程序', order: 7}
+            {name: 'full_application_backup', title: '完整应用备份', order: 2},
+            {name: 'fetch_repository', title: '获取版本元数据', order: 3},
+            {name: 'checkout_version', title: '下载更新包', order: 4},
+            {name: 'pull_changes', title: '同步更新文件', order: 5},
+            {name: 'install_dependencies', title: '安装依赖包', order: 6},
+            {name: 'run_migrations', title: '执行数据库迁移', order: 7},
+            {name: 'restart_application', title: '重启应用程序', order: 8}
         ];
 
         // Initialize page

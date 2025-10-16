@@ -392,12 +392,13 @@ class UpdateService:
             # 定义更新步骤
             update_steps = [
                 (UpdateLogStep.BACKUP_DATABASE.value, "备份数据库", 1),
-                (UpdateLogStep.FETCH_REPOSITORY.value, "获取版本元数据", 2),
-                (UpdateLogStep.CHECKOUT_VERSION.value, "下载更新包", 3),
-                (UpdateLogStep.PULL_CHANGES.value, "同步更新文件", 4),
-                (UpdateLogStep.INSTALL_DEPENDENCIES.value, "安装依赖包", 5),
-                (UpdateLogStep.RUN_MIGRATIONS.value, "执行数据库迁移", 6),
-                (UpdateLogStep.RESTART_APPLICATION.value, "重启应用程序", 7)
+                (UpdateLogStep.FULL_APPLICATION_BACKUP.value, "完整应用备份", 2),  # 添加完整备份步骤
+                (UpdateLogStep.FETCH_REPOSITORY.value, "获取版本元数据", 3),
+                (UpdateLogStep.CHECKOUT_VERSION.value, "下载更新包", 4),
+                (UpdateLogStep.PULL_CHANGES.value, "同步更新文件", 5),
+                (UpdateLogStep.INSTALL_DEPENDENCIES.value, "安装依赖包", 6),
+                (UpdateLogStep.RUN_MIGRATIONS.value, "执行数据库迁移", 7),
+                (UpdateLogStep.RESTART_APPLICATION.value, "重启应用程序", 8)
             ]
             
             # 为每个步骤创建UpdateStepLog记录
@@ -453,32 +454,97 @@ class UpdateService:
     def _execute_update(self, target_version: str, force_reinstall: bool, source: str, update_log_id: str):
         """Execute the actual update process in background thread"""
         with self._ensure_app_context():
-            try:
-                # Get update log
-                update_log = UpdateLog.query.filter_by(id=update_log_id).first()
-                if not update_log:
-                    print(f"❌ Update log not found for id: {update_log_id}")
-                    return
-                
-                # Update system information
-                update_log.system_platform = sys.platform
-                update_log.python_version = sys.version.split()[0]
-                db.session.commit()
-                
-                # Execute update with logging
-                self._execute_update_with_logging(target_version, force_reinstall, source, update_log)
-                
-            except Exception as e:
-                print(f"❌ Update job failed: {e}")
-                import traceback
-                traceback.print_exc()
+            def _create_full_backup(self, project_root: Path, backup_dir: Path) -> Optional[Path]:
+                """Create a full backup of the application before updating"""
                 try:
-                    update_log = UpdateLog.query.filter_by(id=update_log_id).first()
-                    if update_log:
-                        update_log.mark_failed(f"Update job execution failed: {str(e)}")
-                        db.session.commit()
-                except:
-                    pass
+                    import tarfile
+                    from datetime import datetime
+                    
+                    # 创建备份目录
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # 生成备份文件名
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    backup_filename = f"full_backup_{timestamp}.tar.gz"
+                    backup_path = backup_dir / backup_filename
+                    
+                    print(f"💾 Creating full application backup: {backup_path}")
+                    
+                    # 确定要排除的目录/文件
+                    exclude_patterns = {
+                        '__pycache__',
+                        '.git',
+                        '.pytest_cache',
+                        '.vscode',
+                        '.idea',
+                        'database_backups',
+                        'db/update_progress',
+                        '*.pyc',
+                        '*.pyo',
+                        '*.log'
+                    }
+                    
+                    def should_exclude(path: Path) -> bool:
+                        """Check if a path should be excluded from backup"""
+                        # 检查路径中的任何部分是否匹配排除模式
+                        for part in path.parts:
+                            if part in exclude_patterns:
+                                return True
+                            # 检查文件扩展名
+                            for pattern in exclude_patterns:
+                                if pattern.startswith('*.') and path.name.endswith(pattern[1:]):
+                                    return True
+                        return False
+                    
+                    # 创建tar.gz备份文件
+                    with tarfile.open(backup_path, "w:gz") as tar:
+                        for file_path in project_root.rglob('*'):
+                            # 跳过目录本身
+                            if file_path == project_root:
+                                continue
+                            
+                            # 检查是否应该排除
+                            relative_path = file_path.relative_to(project_root)
+                            if should_exclude(relative_path):
+                                continue
+                            
+                            # 添加文件到备份
+                            try:
+                                arcname = relative_path.as_posix()
+                                tar.add(file_path, arcname=arcname)
+                            except (OSError, IOError) as e:
+                                print(f"⚠️ Warning: Could not add {file_path} to backup: {e}")
+                                continue
+                    
+                    print(f"✅ Full backup completed: {backup_path}")
+                    return backup_path
+                    
+                except Exception as e:
+                    print(f"❌ Full backup failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return None
+            
+            def _execute_update(self, target_version: str, force_reinstall: bool, source: str, update_log_id: int):
+                """Execute update in background thread"""
+                try:
+                    with self.app.app_context():
+                        update_log = UpdateLog.query.filter_by(id=update_log_id).first()
+                        if not update_log:
+                            raise RuntimeError('Update log not found')
+            
+                        self._execute_update_with_logging(target_version, force_reinstall, source, update_log)
+                except Exception as e:
+                    print(f"❌ Update job failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    try:
+                        update_log = UpdateLog.query.filter_by(id=update_log_id).first()
+                        if update_log:
+                            update_log.mark_failed(f"Update job execution failed: {str(e)}")
+                            db.session.commit()
+                    except:
+                        pass
 
     def _execute_update_with_logging(self, target_version: str, force_reinstall: bool, source: str, update_log: UpdateLog):
         """Execute update with detailed step logging"""
@@ -509,6 +575,14 @@ class UpdateService:
             backup_path = manager.backup_database(backup_candidates, backup_dir)
             backup_message = f'数据库备份完成: {backup_path.name}' if backup_path else '未检测到数据库文件，跳过备份'
             self._update_step_status(update_log, UpdateLogStep.BACKUP_DATABASE.value, backup_message)
+
+            # Step 1.5: Full application backup (new step)
+            full_backup_path = self._create_full_backup(project_root, backup_dir)
+            if full_backup_path:
+                full_backup_message = f'完整应用备份完成: {full_backup_path.name}'
+            else:
+                full_backup_message = '完整应用备份跳过或失败'
+            self._update_step_status(update_log, UpdateLogStep.FULL_APPLICATION_BACKUP.value, full_backup_message)
 
             # Step 2: fetch release metadata
             metadata = manager.fetch_release_metadata(target_version)
@@ -902,6 +976,99 @@ class UpdateService:
             log_data = log.to_dict()
             log_data['steps'] = [step.to_dict() for step in log.steps]
             return log_data
+
+    def get_logs(self, page: int = 1, per_page: int = 20):
+        """Get update logs with pagination"""
+        with self._ensure_app_context():
+            pagination = UpdateLog.query.order_by(UpdateLog.started_at.desc()).paginate(
+                page=page, per_page=per_page, error_out=False
+            )
+            
+            logs = []
+            for log in pagination.items:
+                logs.append({
+                    'id': log.id,
+                    'update_id': log.update_id,
+                    'target_version': log.target_version,
+                    'source': log.source,
+                    'status': log.status,
+                    'created_at': log.started_at.isoformat() if log.started_at else None,
+                    'completed_at': log.completed_at.isoformat() if log.completed_at else None,
+                    'error_message': log.error_message,
+                    'force_reinstall': log.force_reinstall
+                })
+            
+            return {
+                'logs': logs,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total': pagination.total,
+                    'pages': pagination.pages
+                }
+            }
+
+    def get_log_details(self, log_id: int):
+        """Get detailed update log"""
+        with self._ensure_app_context():
+            log = UpdateLog.query.filter_by(id=log_id).first()
+            if not log:
+                return None
+                
+            steps = []
+            step_logs = UpdateStepLog.query.filter_by(update_log_id=log_id).order_by(UpdateStepLog.step_order).all()
+            for step_log in step_logs:
+                steps.append({
+                    'id': step_log.id,
+                    'step_name': step_log.step_name,
+                    'step_order': step_log.step_order,
+                    'status': step_log.status,
+                    'output': step_log.output,
+                    'created_at': step_log.started_at.isoformat() if step_log.started_at else None,
+                    'completed_at': step_log.completed_at.isoformat() if step_log.completed_at else None
+                })
+            
+            return {
+                'log': {
+                    'id': log.id,
+                    'update_id': log.update_id,
+                    'target_version': log.target_version,
+                    'source': log.source,
+                    'status': log.status,
+                    'created_at': log.started_at.isoformat() if log.started_at else None,
+                    'completed_at': log.completed_at.isoformat() if log.completed_at else None,
+                    'error_message': log.error_message,
+                    'force_reinstall': log.force_reinstall
+                },
+                'steps': steps
+            }
+
+    def _send_progress_event(self, update_log: UpdateLog, step_log: UpdateStepLog, status: str, output: str = ''):
+        """Send progress event for real-time updates"""
+        try:
+            # 这里可以集成WebSocket或其他实时通信机制
+            # 当前实现使用简单的文件方式存储进度，供前端轮询获取
+            import json
+            from pathlib import Path
+            
+            progress_dir = Path('db') / 'update_progress'
+            progress_dir.mkdir(exist_ok=True)
+            
+            progress_file = progress_dir / f"{update_log.id}.json"
+            progress_data = {
+                'update_log_id': update_log.id,
+                'step_name': step_log.step_name,
+                'step_order': step_log.step_order,
+                'status': status,
+                'output': output,
+                'timestamp': datetime.utcnow().isoformat()
+            }
+            
+            with open(progress_file, 'w', encoding='utf-8') as f:
+                json.dump(progress_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            # 忽略进度更新错误，不影响主流程
+            print(f"⚠️ Warning: Failed to send progress event: {e}")
 
     def _config(self, key, default=None):
         """Get configuration value"""

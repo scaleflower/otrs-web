@@ -17,8 +17,9 @@ class UpdateLogStatus(Enum):
 
 
 class UpdateLogStep(Enum):
-    """Update log step enumeration"""
+    """Update step definitions"""
     BACKUP_DATABASE = "backup_database"
+    FULL_APPLICATION_BACKUP = "full_application_backup"  # 新增完整应用备份步骤
     FETCH_REPOSITORY = "fetch_repository"
     CHECKOUT_VERSION = "checkout_version"
     PULL_CHANGES = "pull_changes"
@@ -81,6 +82,7 @@ class UpdateLog(db.Model):
             'current_version': self.current_version,
             'status': self.status,
             'force_reinstall': self.force_reinstall,
+            'created_at': self.started_at.isoformat() if self.started_at else None,  # 修复字段名称
             'started_at': self.started_at.isoformat() if self.started_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
             'total_steps': self.total_steps,
