@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统升级 - OTRS Ticket Analysis</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Unified Navigation -->
+        <nav class="unified-nav">
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}" class="nav-link">首页</a>
+                <a href="{{ url_for('database_page') }}" class="nav-link">数据库统计</a>
+                <a href="{{ url_for('responsible_stats') }}" class="nav-link">负责人统计</a>
+                <a href="{{ url_for('daily_statistics_page') }}" class="nav-link">每日统计</a>
+                <a href="{{ url_for('view_uploads') }}" class="nav-link">上传记录</a>
+                <a href="{{ url_for('upgrade.upgrade_page') }}" class="nav-link active">系统升级</a>
+            </div>
+        </nav>
+
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="header-title">
+                    <h1><i class="bi bi-arrow-up-circle"></i> 系统升级管理</h1>
+                    <p>检查更新、升级系统和管理备份</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Version Information Card -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h4><i class="bi bi-info-circle"></i> 版本信息</h4>
+                            <button id="checkUpdateBtn" class="btn btn-primary btn-sm">
+                                <i class="bi bi-arrow-clockwise"></i> 检查更新
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h5>当前版本</h5>
+                                    <div class="alert alert-info">
+                                        <i class="bi bi-box"></i>
+                                        <span id="currentVersion" class="fs-4 fw-bold">Loading...</span>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <h5>最新版本</h5>
+                                    <div id="latestVersionContainer">
+                                        <div class="alert alert-secondary">
+                                            <i class="bi bi-cloud-download"></i>
+                                            <span id="latestVersion" class="fs-4 fw-bold">Unknown</span>
+                                            <span id="updateBadge" class="badge bg-success ms-2" style="display: none;">有新版本</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Update Available Section -->
+                            <div id="updateAvailableSection" style="display: none;">
+                                <hr>
+                                <div class="alert alert-success">
+                                    <h5><i class="bi bi-exclamation-circle"></i> 发现新版本!</h5>
+                                    <p><strong id="releaseName"></strong></p>
+                                    <div id="releaseNotes" class="mb-3"></div>
+                                    <button id="startUpgradeBtn" class="btn btn-success">
+                                        <i class="bi bi-cloud-download"></i> 开始升级
+                                    </button>
+                                    <a id="viewReleaseBtn" href="#" target="_blank" class="btn btn-outline-primary">
+                                        <i class="bi bi-eye"></i> 查看详情
+                                    </a>
+                                </div>
+                            </div>
+
+                            <!-- No Update Section -->
+                            <div id="noUpdateSection" style="display: none;">
+                                <hr>
+                                <div class="alert alert-info">
+                                    <i class="bi bi-check-circle"></i> 您的系统已是最新版本
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upgrade Progress Card -->
+            <div class="row mb-4" id="upgradeProgressCard" style="display: none;">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4><i class="bi bi-gear"></i> 升级进度</h4>
+                        </div>
+                        <div class="card-body">
+                            <div class="progress mb-3" style="height: 30px;">
+                                <div id="upgradeProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                                     role="progressbar" style="width: 0%">0%</div>
+                            </div>
+                            <div id="upgradeStatus" class="alert alert-info">
+                                正在准备升级...
+                            </div>
+                            <div id="upgradeLogContainer">
+                                <h6>升级日志:</h6>
+                                <pre id="upgradeLog" class="bg-dark text-light p-3" style="max-height: 300px; overflow-y: auto;"></pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Version History Card -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4><i class="bi bi-clock-history"></i> 版本历史</h4>
+                        </div>
+                        <div class="card-body">
+                            <div id="versionHistoryList"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Backup Management Card -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4><i class="bi bi-archive"></i> 备份管理</h4>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>备份名称</th>
+                                            <th>创建时间</th>
+                                            <th>大小</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="backupListTable">
+                                        <tr>
+                                            <td colspan="4" class="text-center">加载中...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Configuration Card -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4><i class="bi bi-gear-fill"></i> 升级配置</h4>
+                        </div>
+                        <div class="card-body">
+                            <dl class="row">
+                                <dt class="col-sm-3">更新源:</dt>
+                                <dd class="col-sm-9" id="updateSource">-</dd>
+
+                                <dt class="col-sm-3">仓库:</dt>
+                                <dd class="col-sm-9" id="repository">-</dd>
+
+                                <dt class="col-sm-3">自动检查:</dt>
+                                <dd class="col-sm-9" id="autoCheck">-</dd>
+
+                                <dt class="col-sm-3">检查间隔:</dt>
+                                <dd class="col-sm-9" id="checkInterval">-</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <footer class="bg-dark text-light text-center py-3 mt-5">
+        <div class="container">
+            <p>OTRS Ticket Analysis System v{{ APP_VERSION }} | © 2025</p>
+        </div>
+    </footer>
+
+    <script>
+        let currentUpdateInfo = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load initial data
+            loadConfig();
+            checkForUpdates();
+            loadVersionHistory();
+            loadBackupList();
+
+            // Setup event listeners
+            document.getElementById('checkUpdateBtn').addEventListener('click', () => checkForUpdates(true));
+            document.getElementById('startUpgradeBtn').addEventListener('click', startUpgrade);
+        });
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/upgrade/api/config');
+                const data = await response.json();
+
+                if (data.success) {
+                    const config = data.data;
+                    document.getElementById('updateSource').textContent = config.update_source;
+                    document.getElementById('repository').textContent =
+                        config.update_source === 'github' ? config.github_repo : config.yunxiao_repo;
+                    document.getElementById('autoCheck').textContent = config.auto_check_enabled ? '启用' : '禁用';
+                    document.getElementById('checkInterval').textContent = `${config.check_interval_hours} 小时`;
+                }
+            } catch (error) {
+                console.error('Error loading config:', error);
+            }
+        }
+
+        async function checkForUpdates(force = false) {
+            try {
+                const checkBtn = document.getElementById('checkUpdateBtn');
+                checkBtn.disabled = true;
+                checkBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> 检查中...';
+
+                const response = await fetch(`/upgrade/api/check-update?force=${force}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    currentUpdateInfo = data.data;
+                    displayUpdateInfo(data.data);
+                } else {
+                    showError('检查更新失败: ' + data.error);
+                }
+            } catch (error) {
+                showError('检查更新时发生错误: ' + error.message);
+            } finally {
+                const checkBtn = document.getElementById('checkUpdateBtn');
+                checkBtn.disabled = false;
+                checkBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 检查更新';
+            }
+        }
+
+        function displayUpdateInfo(updateInfo) {
+            document.getElementById('currentVersion').textContent = 'v' + updateInfo.current_version;
+            document.getElementById('latestVersion').textContent = 'v' + updateInfo.latest_version;
+
+            if (updateInfo.update_available) {
+                document.getElementById('updateBadge').style.display = 'inline';
+                document.getElementById('updateAvailableSection').style.display = 'block';
+                document.getElementById('noUpdateSection').style.display = 'none';
+
+                document.getElementById('releaseName').textContent = updateInfo.release_name;
+                document.getElementById('releaseNotes').innerHTML = marked.parse(updateInfo.release_notes || '');
+                document.getElementById('viewReleaseBtn').href = updateInfo.download_url;
+            } else {
+                document.getElementById('updateBadge').style.display = 'none';
+                document.getElementById('updateAvailableSection').style.display = 'none';
+                document.getElementById('noUpdateSection').style.display = 'block';
+            }
+        }
+
+        async function startUpgrade() {
+            if (!currentUpdateInfo || !currentUpdateInfo.update_available) {
+                showError('没有可用的更新');
+                return;
+            }
+
+            if (!confirm('确定要升级到版本 ' + currentUpdateInfo.latest_version + ' 吗?\n\n升级前会自动创建备份，但建议您手动备份重要数据。\n\n升级完成后需要重启应用。')) {
+                return;
+            }
+
+            try {
+                // Show progress card
+                document.getElementById('upgradeProgressCard').style.display = 'block';
+                document.getElementById('startUpgradeBtn').disabled = true;
+
+                // Start upgrade
+                const response = await fetch('/upgrade/api/start-upgrade', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        download_url: currentUpdateInfo.tarball_url,
+                        is_tarball: true
+                    })
+                });
+
+                const data = await response.json();
+
+                // Update progress bar
+                document.getElementById('upgradeProgressBar').style.width = '100%';
+                document.getElementById('upgradeProgressBar').textContent = '100%';
+
+                // Display log
+                if (data.log && data.log.length > 0) {
+                    document.getElementById('upgradeLog').textContent = data.log.join('\n');
+                }
+
+                if (data.success) {
+                    document.getElementById('upgradeStatus').className = 'alert alert-success';
+                    document.getElementById('upgradeStatus').innerHTML = `
+                        <i class="bi bi-check-circle"></i> ${data.message}
+                        <br><br>
+                        <button class="btn btn-success" onclick="location.reload()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新页面
+                        </button>
+                    `;
+                    showSuccess(data.message);
+                } else {
+                    document.getElementById('upgradeStatus').className = 'alert alert-danger';
+                    document.getElementById('upgradeStatus').innerHTML =
+                        `<i class="bi bi-x-circle"></i> 升级失败: ${data.error || data.message}`;
+                    showError('升级失败: ' + (data.error || data.message));
+                }
+            } catch (error) {
+                document.getElementById('upgradeStatus').className = 'alert alert-danger';
+                document.getElementById('upgradeStatus').innerHTML =
+                    `<i class="bi bi-x-circle"></i> 升级过程中发生错误: ${error.message}`;
+                showError('升级过程中发生错误: ' + error.message);
+            } finally {
+                document.getElementById('startUpgradeBtn').disabled = false;
+            }
+        }
+
+        async function loadVersionHistory() {
+            try {
+                const response = await fetch('/upgrade/api/version-history?limit=10');
+                const data = await response.json();
+
+                if (data.success && data.data.length > 0) {
+                    const container = document.getElementById('versionHistoryList');
+                    container.innerHTML = '';
+
+                    data.data.forEach((version, index) => {
+                        const versionDiv = document.createElement('div');
+                        versionDiv.className = 'border-bottom pb-3 mb-3';
+                        versionDiv.innerHTML = `
+                            <h5>
+                                <span class="badge bg-primary">v${version.version}</span>
+                                ${version.name}
+                            </h5>
+                            <p class="text-muted small mb-2">
+                                <i class="bi bi-calendar"></i> ${new Date(version.published_at).toLocaleString()}
+                            </p>
+                            <div class="version-notes">${marked.parse(version.body || '')}</div>
+                            <a href="${version.html_url}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-link"></i> 查看详情
+                            </a>
+                        `;
+                        container.appendChild(versionDiv);
+                    });
+                } else {
+                    document.getElementById('versionHistoryList').innerHTML =
+                        '<p class="text-muted">暂无版本历史</p>';
+                }
+            } catch (error) {
+                console.error('Error loading version history:', error);
+            }
+        }
+
+        async function loadBackupList() {
+            try {
+                const response = await fetch('/upgrade/api/backup-list');
+                const data = await response.json();
+
+                const tableBody = document.getElementById('backupListTable');
+
+                if (data.success && data.data.length > 0) {
+                    tableBody.innerHTML = '';
+                    data.data.forEach(backup => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${backup.name}</td>
+                            <td>${backup.created_at}</td>
+                            <td>${formatBytes(backup.size)}</td>
+                            <td>
+                                <button class="btn btn-sm btn-warning" onclick="restoreBackup('${backup.path}', '${backup.name}')">
+                                    <i class="bi bi-arrow-counterclockwise"></i> 恢复
+                                </button>
+                            </td>
+                        `;
+                        tableBody.appendChild(row);
+                    });
+                } else {
+                    tableBody.innerHTML = '<tr><td colspan="4" class="text-center">暂无备份</td></tr>';
+                }
+            } catch (error) {
+                console.error('Error loading backup list:', error);
+            }
+        }
+
+        async function restoreBackup(backupPath, backupName) {
+            if (!confirm(`确定要恢复备份 "${backupName}" 吗?\n\n这将替换当前的应用文件，操作不可逆。`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/upgrade/api/restore-backup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ backup_path: backupPath })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess(data.message + '\n请重启应用以应用更改。');
+                } else {
+                    showError('恢复失败: ' + data.error);
+                }
+            } catch (error) {
+                showError('恢复过程中发生错误: ' + error.message);
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        function showSuccess(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+            alertDiv.style.zIndex = '9999';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(alertDiv);
+            setTimeout(() => alertDiv.remove(), 5000);
+        }
+
+        function showError(message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-danger alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+            alertDiv.style.zIndex = '9999';
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(alertDiv);
+            setTimeout(() => alertDiv.remove(), 5000);
+        }
+    </script>
+
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

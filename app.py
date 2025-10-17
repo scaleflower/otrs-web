@@ -31,6 +31,7 @@ from blueprints.backup_bp import backup_bp
 from blueprints.admin_bp import admin_bp
 from blueprints.init_bp import init_bp
 from blueprints.daily_stats_bp import daily_stats_bp
+from blueprints.upgrade_bp import upgrade_bp
 
 # Import services after app initialization to avoid circular imports
 from services import (
@@ -64,6 +65,7 @@ app.register_blueprint(daily_stats_bp)
 app.register_blueprint(backup_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(init_bp)
+app.register_blueprint(upgrade_bp)
 
 # Application version from config
 APP_VERSION = app.config.get('APP_VERSION', '1.0.0')
