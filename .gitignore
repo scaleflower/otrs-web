@@ -72,4 +72,22 @@ test_data/
 # Temporary files
 *.tmp
 *.temp
+
 # App specific
+# Backup and upgrade directories
+upgrade_backups/
+instance/
+release/
+
+# Obsolete scripts and configs
+*_refactored.py
+*_test.py
+*init_postgres*.py
+direct_postgres_init.py
+force_init_postgres_db.py
+build-docker.sh
+deploy-k8s.yaml
+docker-compose*.yml
+push_to_both_remotes.sh
+云效部署指南.md
+DESIGN_PREVIEW.md

@@ -7,11 +7,15 @@ OTRS工单数据分析系统
 import os
 import sys
 import importlib
+import warnings
 from datetime import datetime
 from urllib.parse import quote_plus
 from flask import Flask, render_template, jsonify, request, redirect, url_for, send_file, abort
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
+
+# 过滤 urllib3 的 OpenSSL 警告
+warnings.filterwarnings('ignore', message='.*urllib3 v2.*', category=Warning)
 
 # 加载.env文件中的环境变量
 from dotenv import load_dotenv
