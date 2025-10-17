@@ -168,9 +168,75 @@ class UpgradeService:
             return False, str(e)
 
     def update_application_files(self, source_dir):
-        """Update application files from extracted release"""
+        """Update application files from extracted release using git"""
         try:
-            self.log_message("Updating application files...")
+            self.log_message("Updating application files using git merge...")
+
+            # Check if this is a git repository
+            if not os.path.exists(os.path.join(self.app_root, '.git')):
+                self.log_message("Not a git repository, falling back to file copy", 'WARNING')
+                return self._update_files_by_copy(source_dir)
+
+            # Get the current branch
+            result = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                cwd=self.app_root,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode != 0:
+                self.log_message("Failed to get current branch, falling back to file copy", 'WARNING')
+                return self._update_files_by_copy(source_dir)
+
+            current_branch = result.stdout.strip()
+            self.log_message(f"Current branch: {current_branch}")
+
+            # Fetch latest changes
+            self.log_message("Fetching latest changes from remote...")
+            result = subprocess.run(
+                ['git', 'fetch', '--all'],
+                cwd=self.app_root,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            if result.returncode != 0:
+                self.log_message(f"Git fetch warning: {result.stderr}", 'WARNING')
+
+            # Pull latest changes
+            self.log_message(f"Pulling latest changes to {current_branch}...")
+            result = subprocess.run(
+                ['git', 'pull', 'origin', current_branch],
+                cwd=self.app_root,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            if result.returncode == 0:
+                self.log_message("Git pull successful")
+                self.log_message(result.stdout)
+                return True, "Files updated via git pull"
+            else:
+                self.log_message(f"Git pull failed: {result.stderr}", 'ERROR')
+                return False, f"Git pull failed: {result.stderr}"
+
+        except subprocess.TimeoutExpired:
+            self.log_message("Git operation timed out", 'ERROR')
+            return False, "Git operation timed out"
+        except Exception as e:
+            self.log_message(f"Error updating files via git: {e}", 'ERROR')
+            self.log_message("Falling back to file copy method", 'WARNING')
+            return self._update_files_by_copy(source_dir)
+
+    def _update_files_by_copy(self, source_dir):
+        """Fallback method: Update files by copying (use with caution)"""
+        try:
+            self.log_message("Using file copy method (NOT RECOMMENDED for production)")
+            self.log_message("WARNING: This may cause issues with version control")
 
             # Files and directories to update
             items_to_update = [
@@ -190,17 +256,29 @@ class UpgradeService:
                 dst = os.path.join(self.app_root, item)
 
                 if os.path.exists(src):
-                    # Remove existing file/directory
-                    if os.path.exists(dst):
-                        if os.path.isdir(dst):
-                            shutil.rmtree(dst)
-                        else:
-                            os.remove(dst)
+                    self.log_message(f"Copying: {item}")
 
-                    # Copy new file/directory
+                    # For directories, use rsync-like behavior to merge
                     if os.path.isdir(src):
-                        shutil.copytree(src, dst)
+                        if os.path.exists(dst):
+                            # Merge directories instead of replacing
+                            for root, dirs, files in os.walk(src):
+                                # Calculate relative path
+                                rel_path = os.path.relpath(root, src)
+                                dst_dir = os.path.join(dst, rel_path) if rel_path != '.' else dst
+
+                                # Create directories if they don't exist
+                                os.makedirs(dst_dir, exist_ok=True)
+
+                                # Copy files
+                                for file in files:
+                                    src_file = os.path.join(root, file)
+                                    dst_file = os.path.join(dst_dir, file)
+                                    shutil.copy2(src_file, dst_file)
+                        else:
+                            shutil.copytree(src, dst)
                     else:
+                        # Copy single file
                         shutil.copy2(src, dst)
 
                     self.log_message(f"Updated: {item}")
@@ -254,74 +332,60 @@ class UpgradeService:
             self.log_message(f"Error restoring backup: {e}", 'ERROR')
             return False, str(e)
 
-    def perform_upgrade(self, download_url, is_tarball=True):
-        """Perform complete upgrade process"""
+    def perform_upgrade(self, download_url=None, is_tarball=True):
+        """Perform complete upgrade process using git"""
         backup_path = None
-        temp_extract_dir = None
-        temp_archive = None
 
         try:
             self.clear_upgrade_log()
             self.log_message("=== Starting Upgrade Process ===")
+            self.log_message(f"Application root: {self.app_root}")
 
             # Step 1: Create backup
+            self.log_message("\n[Step 1/3] Creating backup...")
             success, result = self.create_backup()
             if not success:
                 return False, f"Backup failed: {result}"
             backup_path = result
+            self.log_message(f"✓ Backup created: {backup_path}")
 
-            # Step 2: Download release
-            success, result = self.download_release(download_url, is_tarball)
+            # Step 2: Update application files using git
+            self.log_message("\n[Step 2/3] Updating application files...")
+            success, result = self.update_application_files(None)  # None means use git
             if not success:
-                return False, f"Download failed: {result}"
-            temp_archive = result
-
-            # Step 3: Extract release
-            temp_extract_dir = tempfile.mkdtemp()
-            success, result = self.extract_release(temp_archive, temp_extract_dir)
-            if not success:
-                return False, f"Extraction failed: {result}"
-            extracted_path = result
-
-            # Step 4: Install dependencies
-            requirements_file = os.path.join(extracted_path, 'requirements.txt')
-            success, result = self.install_dependencies(requirements_file)
-            if not success:
-                self.log_message("Dependency installation failed, rolling back...", 'ERROR')
-                self.restore_backup(backup_path)
-                return False, f"Dependency installation failed: {result}"
-
-            # Step 5: Update application files
-            success, result = self.update_application_files(extracted_path)
-            if not success:
-                self.log_message("File update failed, rolling back...", 'ERROR')
+                self.log_message("✗ File update failed, rolling back...", 'ERROR')
                 self.restore_backup(backup_path)
                 return False, f"File update failed: {result}"
+            self.log_message(f"✓ {result}")
 
-            # Clean up temporary files
-            if temp_archive and os.path.exists(temp_archive):
-                os.remove(temp_archive)
-            if temp_extract_dir and os.path.exists(temp_extract_dir):
-                shutil.rmtree(temp_extract_dir)
+            # Step 3: Install dependencies
+            self.log_message("\n[Step 3/3] Installing/updating dependencies...")
+            requirements_file = os.path.join(self.app_root, 'requirements.txt')
+            success, result = self.install_dependencies(requirements_file)
+            if not success:
+                self.log_message("✗ Dependency installation failed, rolling back...", 'ERROR')
+                self.restore_backup(backup_path)
+                return False, f"Dependency installation failed: {result}"
+            self.log_message("✓ Dependencies installed/updated")
 
-            self.log_message("=== Upgrade Completed Successfully ===")
-            self.log_message("Please restart the application to apply changes")
+            self.log_message("\n=== Upgrade Completed Successfully ===")
+            self.log_message("✓ All steps completed successfully")
+            self.log_message("\n⚠️  IMPORTANT: Please restart the application to apply changes")
+            self.log_message("   You can restart by running: python3 app.py")
 
-            return True, "Upgrade completed successfully. Please restart the application."
+            return True, "Upgrade completed successfully. Please restart the application to apply changes."
 
         except Exception as e:
-            self.log_message(f"Unexpected error during upgrade: {e}", 'ERROR')
+            self.log_message(f"\n✗ Unexpected error during upgrade: {e}", 'ERROR')
 
             # Attempt to restore backup
             if backup_path:
-                self.log_message("Attempting to restore backup...", 'WARNING')
-                self.restore_backup(backup_path)
-
-            # Clean up temporary files
-            if temp_archive and os.path.exists(temp_archive):
-                os.remove(temp_archive)
-            if temp_extract_dir and os.path.exists(temp_extract_dir):
-                shutil.rmtree(temp_extract_dir)
+                self.log_message("⚠️  Attempting to restore backup...", 'WARNING')
+                restore_success, restore_msg = self.restore_backup(backup_path)
+                if restore_success:
+                    self.log_message("✓ Backup restored successfully")
+                else:
+                    self.log_message(f"✗ Failed to restore backup: {restore_msg}", 'ERROR')
 
             return False, f"Upgrade failed: {e}"
 
