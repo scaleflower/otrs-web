@@ -3,7 +3,6 @@ Backup Blueprint - Handles database backup routes
 """
 from flask import Blueprint, request, send_file, jsonify
 from services import scheduler_service
-from utils.auth import require_daily_stats_password
 import os
 
 backup_bp = Blueprint('backup', __name__, url_prefix='/backup')
@@ -69,7 +68,6 @@ def api_verify_backup():
         return jsonify({'error': str(e)}), 500
 
 @backup_bp.route('/cleanup', methods=['POST'])
-@require_daily_stats_password
 def api_cleanup_backups():
     """Clean up old backup files"""
     try:
@@ -91,7 +89,6 @@ def api_cleanup_backups():
         return jsonify({'error': str(e)}), 500
 
 @backup_bp.route('/restore', methods=['POST'])
-@require_daily_stats_password
 def api_restore_backup():
     """Restore database from backup"""
     try:
@@ -119,7 +116,6 @@ def api_restore_backup():
         return jsonify({'error': str(e)}), 500
 
 @backup_bp.route('/download/<filename>')
-@require_daily_stats_password
 def api_download_backup(filename):
     """Download a backup file"""
     try:

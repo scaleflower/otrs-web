@@ -3,7 +3,6 @@ Daily Statistics Blueprint - Handles daily statistics routes
 """
 from flask import Blueprint, render_template, request, jsonify
 from services import scheduler_service, analysis_service
-from utils.auth import require_daily_stats_password
 from utils import validate_json_data, validate_schedule_time
 
 daily_stats_bp = Blueprint('daily_stats', __name__, url_prefix='/daily-statistics')
@@ -23,7 +22,6 @@ def api_daily_statistics():
         return jsonify({'error': str(e)}), 500
 
 @daily_stats_bp.route('/api/schedule', methods=['POST'])
-@require_daily_stats_password
 def api_update_schedule():
     """Update statistics schedule configuration"""
     try:
@@ -54,7 +52,6 @@ def api_update_schedule():
         return jsonify({'error': str(e)}), 500
 
 @daily_stats_bp.route('/api/calculate', methods=['POST'])
-@require_daily_stats_password
 def api_calculate_daily_stats():
     """Manually trigger daily statistics calculation"""
     try:

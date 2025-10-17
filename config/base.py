@@ -62,27 +62,7 @@ class Config:
     # Security settings
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
-    
-    # Daily Statistics Password Protection
-    DAILY_STATS_PASSWORD = os.environ.get('DAILY_STATS_PASSWORD') or 'Enabling@2025'
 
-    # Session settings for password protection
-    PERMANENT_SESSION_LIFETIME = timedelta(hours=2)  # 密码认证有效期2小时
-
-    # Update configuration
-    APP_UPDATE_ENABLED = os.environ.get('APP_UPDATE_ENABLED', 'True').lower() == 'true'
-    APP_UPDATE_REPO = os.environ.get('APP_UPDATE_REPO', 'Jacky/otrs-web')
-    APP_UPDATE_GITHUB_TOKEN = os.environ.get('APP_UPDATE_GITHUB_TOKEN', 'your_github_token_here')
-    APP_UPDATE_POLL_INTERVAL = int(os.environ.get('APP_UPDATE_POLL_INTERVAL', 3600))
-    APP_UPDATE_DOWNLOAD_DIR = os.environ.get('APP_UPDATE_DOWNLOAD_DIR')
-    APP_UPDATE_PRESERVE_PATHS = os.environ.get('APP_UPDATE_PRESERVE_PATHS')
-    APP_UPDATE_MIGRATION_SCRIPTS = os.environ.get('APP_UPDATE_MIGRATION_SCRIPTS')
-    APP_UPDATE_RESTART_DELAY = int(os.environ.get('APP_UPDATE_RESTART_DELAY', 5))
-    APP_UPDATE_YUNXIAO_TOKEN = os.environ.get('APP_UPDATE_YUNXIAO_TOKEN')
-    APP_UPDATE_USE_SSH = os.environ.get('APP_UPDATE_USE_SSH', 'False').lower() == 'true'
-    # 更新源配置: github, yunxiao, both
-    APP_UPDATE_SOURCE = os.environ.get('APP_UPDATE_SOURCE', 'github')  # github, yunxiao or both
-    
     @staticmethod
     def init_app(app):
         """Initialize application with this configuration"""

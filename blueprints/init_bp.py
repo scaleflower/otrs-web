@@ -3,7 +3,7 @@ System initialization blueprint for first-time setup
 """
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session
-from models import db, SystemConfig, AppUpdateStatus
+from models import db, SystemConfig
 from config.base import Config
 import os
 import sqlalchemy
@@ -179,12 +179,6 @@ def api_configure_admin():
             db.session.add(initialized)
         else:
             initialized.value = 'true'
-            
-        # Set initial version
-        update_status = AppUpdateStatus.query.first()
-        if not update_status:
-            update_status = AppUpdateStatus(current_version=Config.APP_VERSION)
-            db.session.add(update_status)
             
         db.session.commit()
         return jsonify({'success': True, 'message': '管理员账户创建成功！'})

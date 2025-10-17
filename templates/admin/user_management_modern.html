@@ -1,0 +1,278 @@
+{% extends "admin_base_modern.html" %}
+
+{% block title %}用户管理 - 后台管理 - OTRS工单管理系统{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="admin-page-header">
+    <h1 class="admin-page-title">
+        <i class="fas fa-users"></i>
+        用户管理
+    </h1>
+    <p class="admin-page-description">管理系统用户账户、角色分配和权限控制</p>
+</div>
+
+<!-- 统计卡片 -->
+<div class="admin-stats-grid">
+    <div class="admin-stat-card">
+        <div class="admin-stat-card-header">
+            <span class="admin-stat-card-title">总用户数</span>
+            <div class="admin-stat-card-icon primary">
+                <i class="fas fa-users"></i>
+            </div>
+        </div>
+        <div class="admin-stat-card-value">156</div>
+        <div class="admin-stat-card-trend">
+            <i class="fas fa-arrow-up"></i> +12 本月
+        </div>
+    </div>
+
+    <div class="admin-stat-card">
+        <div class="admin-stat-card-header">
+            <span class="admin-stat-card-title">活跃用户</span>
+            <div class="admin-stat-card-icon success">
+                <i class="fas fa-user-check"></i>
+            </div>
+        </div>
+        <div class="admin-stat-card-value">142</div>
+        <div class="admin-stat-card-trend">
+            <i class="fas fa-arrow-up"></i> 91% 活跃率
+        </div>
+    </div>
+
+    <div class="admin-stat-card">
+        <div class="admin-stat-card-header">
+            <span class="admin-stat-card-title">管理员</span>
+            <div class="admin-stat-card-icon warning">
+                <i class="fas fa-user-shield"></i>
+            </div>
+        </div>
+        <div class="admin-stat-card-value">8</div>
+        <div class="admin-stat-card-trend">
+            5.1% 占比
+        </div>
+    </div>
+
+    <div class="admin-stat-card">
+        <div class="admin-stat-card-header">
+            <span class="admin-stat-card-title">待审核</span>
+            <div class="admin-stat-card-icon error">
+                <i class="fas fa-user-clock"></i>
+            </div>
+        </div>
+        <div class="admin-stat-card-value">6</div>
+        <div class="admin-stat-card-trend down">
+            <i class="fas fa-exclamation-circle"></i> 需要处理
+        </div>
+    </div>
+</div>
+
+<!-- 工具栏 -->
+<div class="admin-toolbar">
+    <div class="admin-toolbar-left">
+        <div class="navbar-search" style="margin: 0;">
+            <i class="fas fa-search navbar-search-icon"></i>
+            <input type="text" class="navbar-search-input" placeholder="搜索用户名、邮箱...">
+        </div>
+        <select class="admin-form-select" style="width: 150px;">
+            <option value="">全部角色</option>
+            <option value="admin">管理员</option>
+            <option value="user">普通用户</option>
+            <option value="guest">访客</option>
+        </select>
+        <select class="admin-form-select" style="width: 150px;">
+            <option value="">全部状态</option>
+            <option value="active">活跃</option>
+            <option value="inactive">停用</option>
+            <option value="pending">待审核</option>
+        </select>
+    </div>
+    <div class="admin-toolbar-right">
+        <button class="btn btn-default">
+            <i class="fas fa-download"></i>
+            导出
+        </button>
+        <button class="btn btn-primary" onclick="showAddUserModal()">
+            <i class="fas fa-plus"></i>
+            添加用户
+        </button>
+    </div>
+</div>
+
+<!-- 用户列表表格 -->
+<div class="admin-table-container">
+    <div class="admin-table-header">
+        <h3 class="admin-table-title">用户列表</h3>
+        <div class="admin-table-actions">
+            <button class="btn btn-text" onclick="refreshTable()">
+                <i class="fas fa-sync-alt"></i>
+                刷新
+            </button>
+        </div>
+    </div>
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th style="width: 40px;">
+                    <input type="checkbox" id="selectAll">
+                </th>
+                <th>用户名</th>
+                <th>邮箱</th>
+                <th>角色</th>
+                <th>状态</th>
+                <th>最后登录</th>
+                <th>创建时间</th>
+                <th style="width: 150px; text-align: center;">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><input type="checkbox"></td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="navbar-user-avatar" style="width: 32px; height: 32px; font-size: 14px;">
+                            Z
+                        </div>
+                        <span style="font-weight: 500;">张三</span>
+                    </div>
+                </td>
+                <td>zhangsan@example.com</td>
+                <td><span class="tag tag-warning">管理员</span></td>
+                <td><span class="status-badge active">活跃</span></td>
+                <td>2025-10-17 14:30</td>
+                <td>2024-01-15</td>
+                <td style="text-align: center;">
+                    <div class="admin-action-buttons" style="justify-content: center;">
+                        <button class="admin-action-btn" title="编辑">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="admin-action-btn" title="权限">
+                            <i class="fas fa-key"></i>
+                        </button>
+                        <button class="admin-action-btn danger" title="删除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td><input type="checkbox"></td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="navbar-user-avatar" style="width: 32px; height: 32px; font-size: 14px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                            L
+                        </div>
+                        <span style="font-weight: 500;">李四</span>
+                    </div>
+                </td>
+                <td>lisi@example.com</td>
+                <td><span class="tag tag-primary">普通用户</span></td>
+                <td><span class="status-badge active">活跃</span></td>
+                <td>2025-10-17 10:15</td>
+                <td>2024-03-20</td>
+                <td style="text-align: center;">
+                    <div class="admin-action-buttons" style="justify-content: center;">
+                        <button class="admin-action-btn" title="编辑">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="admin-action-btn" title="权限">
+                            <i class="fas fa-key"></i>
+                        </button>
+                        <button class="admin-action-btn danger" title="删除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td><input type="checkbox"></td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="navbar-user-avatar" style="width: 32px; height: 32px; font-size: 14px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                            W
+                        </div>
+                        <span style="font-weight: 500;">王五</span>
+                    </div>
+                </td>
+                <td>wangwu@example.com</td>
+                <td><span class="tag tag-primary">普通用户</span></td>
+                <td><span class="status-badge inactive">停用</span></td>
+                <td>2025-10-01 09:20</td>
+                <td>2024-05-10</td>
+                <td style="text-align: center;">
+                    <div class="admin-action-buttons" style="justify-content: center;">
+                        <button class="admin-action-btn" title="编辑">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="admin-action-btn" title="权限">
+                            <i class="fas fa-key"></i>
+                        </button>
+                        <button class="admin-action-btn danger" title="删除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td><input type="checkbox"></td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="navbar-user-avatar" style="width: 32px; height: 32px; font-size: 14px; background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                            Z
+                        </div>
+                        <span style="font-weight: 500;">赵六</span>
+                    </div>
+                </td>
+                <td>zhaoliu@example.com</td>
+                <td><span class="tag tag-success">普通用户</span></td>
+                <td><span class="status-badge pending">待审核</span></td>
+                <td>-</td>
+                <td>2025-10-16</td>
+                <td style="text-align: center;">
+                    <div class="admin-action-buttons" style="justify-content: center;">
+                        <button class="admin-action-btn" title="批准" style="color: var(--success-color);">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button class="admin-action-btn danger" title="拒绝">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- 分页 -->
+    <div class="admin-pagination">
+        <button class="admin-pagination-btn" disabled>
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <button class="admin-pagination-btn active">1</button>
+        <button class="admin-pagination-btn">2</button>
+        <button class="admin-pagination-btn">3</button>
+        <span style="color: var(--text-secondary); padding: 0 8px;">...</span>
+        <button class="admin-pagination-btn">10</button>
+        <button class="admin-pagination-btn">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showAddUserModal() {
+    alert('添加用户功能待实现');
+}
+
+function refreshTable() {
+    location.reload();
+}
+
+// 全选功能
+document.getElementById('selectAll')?.addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.admin-table tbody input[type="checkbox"]');
+    checkboxes.forEach(cb => cb.checked = this.checked);
+});
+</script>
+{% endblock %}

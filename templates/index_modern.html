@@ -1,0 +1,367 @@
+{% extends "base_modern.html" %}
+
+{% block title %}首页 - OTRS工单管理系统{% endblock %}
+
+{% block content %}
+<!-- 内容头部 -->
+<div class="content-header">
+    <div class="content-header-top">
+        <h1 class="content-title">工单管理</h1>
+        <div class="content-actions">
+            <button class="btn btn-default" onclick="clearDatabase()">
+                <i class="fas fa-trash-alt"></i>
+                清空数据库
+            </button>
+            <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                <i class="fas fa-upload"></i>
+                上传工单
+            </button>
+        </div>
+    </div>
+
+    <!-- 标签页 -->
+    <div class="content-tabs">
+        <a href="#upload" class="content-tab active">
+            上传分析
+        </a>
+        <a href="#history" class="content-tab">
+            历史记录
+            <span class="content-tab-badge" id="uploadCountBadge">0</span>
+        </a>
+    </div>
+</div>
+
+<!-- 内容主体 -->
+<div class="content-body">
+    <!-- 上传区域 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-area-inner">
+                    <div class="upload-icon">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </div>
+                    <h3 class="upload-title">拖放Excel文件到这里</h3>
+                    <p class="upload-subtitle">或</p>
+                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                        <i class="fas fa-folder-open"></i>
+                        选择文件
+                    </button>
+                    <p class="upload-hint">支持 .xlsx, .xls 格式，最大16MB</p>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls" style="display: none;" onchange="handleFileSelect(event)">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 最近上传信息 -->
+    <div class="card" id="latestUploadCard" style="display: none;">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i class="fas fa-info-circle"></i>
+                最近上传
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="info-grid">
+                <div class="info-item">
+                    <label>文件名</label>
+                    <div id="uploadFilename">-</div>
+                </div>
+                <div class="info-item">
+                    <label>上传时间</label>
+                    <div id="uploadTime">-</div>
+                </div>
+                <div class="info-item">
+                    <label>记录总数</label>
+                    <div id="totalRecords">-</div>
+                </div>
+                <div class="info-item">
+                    <label>新增记录</label>
+                    <div id="newRecords">-</div>
+                </div>
+                <div class="info-item">
+                    <label>未关闭工单</label>
+                    <div id="openTickets">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 统计数据 -->
+    <div id="statsContainer" style="display: none;">
+        <h2 class="section-title mt-3 mb-2">
+            <i class="fas fa-chart-bar"></i>
+            统计分析
+        </h2>
+
+        <div class="stats-grid">
+            <!-- 年龄段统计 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">工单年龄分布</h3>
+                </div>
+                <div class="card-body">
+                    <div class="stats-chart" id="ageChart">
+                        <!-- 年龄段数据将动态加载 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 优先级统计 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">优先级分布</h3>
+                </div>
+                <div class="card-body">
+                    <div class="stats-chart" id="priorityChart">
+                        <!-- 优先级数据将动态加载 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 状态统计 -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">状态分布</h3>
+                </div>
+                <div class="card-body">
+                    <div class="stats-chart" id="stateChart">
+                        <!-- 状态数据将动态加载 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* 上传区域样式 */
+.upload-area {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 60px 20px;
+    text-align: center;
+    transition: all var(--transition-normal);
+    background: var(--background-color);
+}
+
+.upload-area:hover {
+    border-color: var(--primary-color);
+    background: rgba(24, 144, 255, 0.02);
+}
+
+.upload-area.drag-over {
+    border-color: var(--primary-color);
+    background: rgba(24, 144, 255, 0.05);
+    transform: scale(1.02);
+}
+
+.upload-icon {
+    font-size: 64px;
+    color: var(--primary-color);
+    margin-bottom: 20px;
+}
+
+.upload-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.upload-subtitle {
+    color: var(--text-secondary);
+    margin: 16px 0;
+}
+
+.upload-hint {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-top: 12px;
+}
+
+/* 信息网格 */
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 24px;
+}
+
+.info-item label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.info-item div {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* 统计网格 */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    margin-top: 16px;
+}
+
+.stats-chart {
+    min-height: 200px;
+}
+
+.section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+</style>
+
+<script>
+// 文件拖放
+const uploadArea = document.getElementById('uploadArea');
+
+uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('drag-over');
+});
+
+uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('drag-over');
+});
+
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('drag-over');
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        handleFile(files[0]);
+    }
+});
+
+// 文件选择
+function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (file) {
+        handleFile(file);
+    }
+}
+
+// 处理文件上传
+function handleFile(file) {
+    // 验证文件类型
+    const validTypes = ['.xlsx', '.xls'];
+    const fileName = file.name.toLowerCase();
+    const isValid = validTypes.some(type => fileName.endsWith(type));
+
+    if (!isValid) {
+        alert('请上传 Excel 文件 (.xlsx 或 .xls)');
+        return;
+    }
+
+    // 验证文件大小 (16MB)
+    if (file.size > 16 * 1024 * 1024) {
+        alert('文件大小不能超过 16MB');
+        return;
+    }
+
+    // 上传文件
+    uploadFile(file);
+}
+
+// 上传文件到服务器
+function uploadFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    // 显示加载提示
+    const uploadArea = document.getElementById('uploadArea');
+    uploadArea.innerHTML = `
+        <div class="upload-area-inner">
+            <div class="upload-icon">
+                <i class="fas fa-spinner fa-spin"></i>
+            </div>
+            <h3 class="upload-title">正在上传...</h3>
+            <p class="upload-subtitle">${file.name}</p>
+        </div>
+    `;
+
+    fetch('/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showUploadSuccess(data);
+        } else {
+            showUploadError(data.error || '上传失败');
+        }
+    })
+    .catch(error => {
+        showUploadError('网络错误: ' + error.message);
+    });
+}
+
+// 显示上传成功
+function showUploadSuccess(data) {
+    location.reload(); // 简单处理，直接刷新页面
+}
+
+// 显示上传错误
+function showUploadError(message) {
+    alert('上传失败: ' + message);
+    location.reload();
+}
+
+// 清空数据库
+function clearDatabase() {
+    if (!confirm('确定要清空所有工单数据吗？此操作不可恢复！')) {
+        return;
+    }
+
+    fetch('/clear-database', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('数据库已清空');
+            location.reload();
+        } else {
+            alert('清空失败: ' + data.error);
+        }
+    });
+}
+
+// 加载最近上传信息
+function loadLatestUpload() {
+    fetch('/api/latest-upload-info')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.has_data) {
+                document.getElementById('latestUploadCard').style.display = 'block';
+                document.getElementById('uploadFilename').textContent = data.latest_upload.filename;
+                document.getElementById('uploadTime').textContent = data.latest_upload.upload_time;
+                document.getElementById('totalRecords').textContent = data.latest_upload.total_records;
+                document.getElementById('newRecords').textContent = data.latest_upload.new_records_count;
+                document.getElementById('openTickets').textContent = data.latest_upload.open_tickets;
+                document.getElementById('uploadCountBadge').textContent = data.latest_upload.total_records;
+            }
+        });
+}
+
+// 页面加载时获取信息
+loadLatestUpload();
+</script>
+{% endblock %}

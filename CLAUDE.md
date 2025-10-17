@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OTRS Web Application - A Flask-based web application for analyzing and visualizing OTRS ticket data. The system supports multiple databases (SQLite for development, PostgreSQL for production), automatic updates from GitHub releases, and comprehensive statistical analysis of ticket data.
+OTRS Web Application - A Flask-based web application for analyzing and visualizing OTRS ticket data. The system supports multiple databases (SQLite for development, PostgreSQL for production) and comprehensive statistical analysis of ticket data.
 
 ## Common Commands
 
@@ -54,10 +54,10 @@ python init_postgres_db.py
 The application follows a modular architecture with clear separation of concerns:
 
 **app.py** → Main Flask application, registers blueprints and initializes services
-**blueprints/** → Route handlers organized by feature (upload, statistics, export, backup, update, admin, init, daily_stats)
-**services/** → Business logic layer (ticket, analysis, export, scheduler, update, backup, system_config)
-**models/** → SQLAlchemy ORM models (ticket, statistics, user, update, system_config)
-**utils/** → Helper functions (auth, validators, formatters, decorators, update_package)
+**blueprints/** → Route handlers organized by feature (upload, statistics, export, backup, admin, init, daily_stats)
+**services/** → Business logic layer (ticket, analysis, export, scheduler, backup, system_config)
+**models/** → SQLAlchemy ORM models (ticket, statistics, user, system_config)
+**utils/** → Helper functions (auth, validators, formatters, decorators)
 **config/** → Environment-based configuration (base, development, production)
 
 ### Service Layer Architecture
@@ -68,7 +68,6 @@ All business logic is encapsulated in services (services/__init__.py):
 - **AnalysisService**: Performs statistical analysis on ticket data (age segments, responsible persons, daily stats)
 - **ExportService**: Generates Excel and text exports of analysis results
 - **SchedulerService**: Manages APScheduler for automated daily statistics and backups
-- **UpdateService**: Handles GitHub release checking and auto-update functionality
 - **BackupService**: Database backup/restore operations with compression
 - **SystemConfigService**: Manages system-wide configuration settings
 
@@ -82,8 +81,6 @@ Services are initialized in app.py via `init_services(app)` and should be import
 **StatisticsConfig**: Scheduler configuration (schedule_time, enabled)
 **StatisticsLog**: Query execution logging
 **ResponsibleConfig**: User-specific responsible person selections
-**AppUpdateStatus**: Tracks current version and available updates
-**UpdateLog / UpdateStepLog**: Detailed update execution history
 **SystemConfig**: Key-value system configuration storage
 
 ### Blueprint Organization
@@ -95,7 +92,6 @@ Each blueprint handles a specific feature domain:
 - **export_bp**: Data export functionality
 - **daily_stats_bp**: Daily statistics management (password-protected)
 - **backup_bp**: Database backup/restore operations
-- **update_bp**: Application update UI and progress tracking
 - **admin_bp**: Administrative functions
 - **init_bp**: First-time setup wizard
 
@@ -120,32 +116,6 @@ Database connection is determined by `SQLALCHEMY_DATABASE_URI` in config, which 
 1. `DATABASE_URL` environment variable (Heroku-style)
 2. `SQLALCHEMY_DATABASE_URI` environment variable
 3. Falls back to SQLite in `db/otrs_data.db`
-
-### Auto-Update System
-
-The application includes a sophisticated auto-update mechanism:
-
-1. **update_service.py**: Checks GitHub releases API for new versions
-2. **update_package.py / yunxiao_update_package.py**: Downloads and applies updates
-3. **UpdateLog models**: Tracks update history with detailed step logging
-4. **Preservation**: Maintains `.env`, `uploads/`, `database_backups/`, `logs/`, and `db/` during updates
-5. **Progress UI**: Real-time update progress displayed in templates/update_progress.html
-
-Updates can be triggered manually via the web UI (requires password authentication).
-
-### Authentication System
-
-Password protection is implemented for sensitive operations (utils/auth.py):
-
-- **require_daily_stats_password**: Decorator for protecting routes
-- **PasswordProtection**: Session-based authentication with 2-hour timeout
-- Default password: 'Enabling@2025' (configurable via `DAILY_STATS_PASSWORD` env var)
-
-Protected operations include:
-- Daily statistics schedule configuration
-- Manual statistics calculation
-- Database backup operations
-- Application updates
 
 ### Scheduler System
 
@@ -198,16 +168,6 @@ DB_NAME=otrs_db
 DB_USER=otrs_user
 DB_PASSWORD=otrs_password
 
-# Authentication
-DAILY_STATS_PASSWORD=Enabling@2025
-
-# Auto-Update
-APP_UPDATE_ENABLED=true
-APP_UPDATE_REPO=Jacky/otrs-web
-APP_UPDATE_GITHUB_TOKEN=your_github_token
-APP_UPDATE_POLL_INTERVAL=3600
-APP_UPDATE_SOURCE=github|yunxiao|both
-
 # Backup
 AUTO_BACKUP_ENABLED=true
 BACKUP_TIME=02:00
@@ -224,7 +184,6 @@ BACKUP_RETENTION_DAYS=30
 │   ├── export_bp.py         # Export routes
 │   ├── daily_stats_bp.py    # Daily statistics routes
 │   ├── backup_bp.py         # Backup routes
-│   ├── update_bp.py         # Update routes
 │   ├── admin_bp.py          # Admin routes
 │   └── init_bp.py           # Initialization wizard
 ├── services/                # Business logic layer
@@ -232,22 +191,17 @@ BACKUP_RETENTION_DAYS=30
 │   ├── analysis_service.py  # Statistical analysis
 │   ├── export_service.py    # Data export logic
 │   ├── scheduler_service.py # Scheduled tasks
-│   ├── update_service.py    # Update management
 │   ├── backup_service.py    # Backup operations
 │   └── system_config_service.py
 ├── models/                  # Database models
 │   ├── ticket.py            # OtrsTicket, UploadDetail
 │   ├── statistics.py        # Statistics models
 │   ├── user.py              # User-related models
-│   ├── update.py            # Update status
-│   ├── update_log.py        # Update logs
 │   └── system_config.py     # System configuration
 ├── utils/                   # Helper utilities
 │   ├── auth.py              # Authentication
 │   ├── validators.py        # Input validation
-│   ├── formatters.py        # Data formatting
-│   ├── update_package.py    # Update package handling
-│   └── yunxiao_update_package.py
+│   └── formatters.py        # Data formatting
 ├── config/                  # Configuration
 │   ├── base.py              # Base configuration
 │   ├── development.py       # Dev environment
@@ -277,20 +231,6 @@ BACKUP_RETENTION_DAYS=30
 - Add table name to required_tables set in `models/__init__.py`
 - Application will auto-create new tables on next restart
 - For complex migrations, update `_ensure_upload_detail_schema()` pattern
-
-### Password-Protected Routes
-
-Use the `@require_daily_stats_password` decorator:
-
-```python
-from utils.auth import require_daily_stats_password
-
-@app.route('/protected-route', methods=['POST'])
-@require_daily_stats_password
-def protected_function():
-    # Your code here
-    pass
-```
 
 ### Scheduled Tasks
 
@@ -327,13 +267,6 @@ scheduler_service.scheduler.add_job(
 - Check file size (max 16MB)
 - Ensure required columns exist in Excel
 - Check logs in `logs/` directory
-
-### Auto-Update Issues
-
-- Verify GitHub token has correct permissions
-- Check `APP_UPDATE_REPO` matches repository format
-- Review UpdateLog entries via web UI
-- Check `database_backups/` for pre-update backups
 
 ### Port Conflicts
 

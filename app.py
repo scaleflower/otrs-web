@@ -28,7 +28,6 @@ from blueprints.upload_bp import upload_bp
 from blueprints.statistics_bp import statistics_bp
 from blueprints.export_bp import export_bp
 from blueprints.backup_bp import backup_bp
-from blueprints.update_bp import update_bp
 from blueprints.admin_bp import admin_bp
 from blueprints.init_bp import init_bp
 from blueprints.daily_stats_bp import daily_stats_bp
@@ -40,12 +39,10 @@ from services import (
     analysis_service,
     export_service,
     scheduler_service,
-    update_service,
     system_config_service
 )
 
 from utils import get_processing_status, validate_age_segment, validate_responsible_list, validate_json_data
-from utils.auth import require_daily_stats_password, PasswordProtection
 
 # Create Flask application
 app = Flask(__name__)
@@ -65,17 +62,8 @@ app.register_blueprint(statistics_bp)
 app.register_blueprint(export_bp)
 app.register_blueprint(daily_stats_bp)
 app.register_blueprint(backup_bp)
-app.register_blueprint(update_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(init_bp)
-
-
-# Perform an initial update check so clients know the latest version
-if app.config.get('APP_UPDATE_ENABLED', True):
-    try:
-        update_service.check_for_updates()
-    except Exception as exc:  # pragma: no cover - logging path
-        app.logger.warning('Initial update check failed: %s', exc)
 
 # Application version from config
 APP_VERSION = app.config.get('APP_VERSION', '1.0.0')
@@ -572,7 +560,6 @@ def api_daily_statistics():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/update-schedule', methods=['POST'])
-@require_daily_stats_password
 def api_update_schedule():
     """Update statistics schedule configuration"""
     try:
@@ -604,7 +591,6 @@ def api_update_schedule():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/calculate-daily-stats', methods=['POST'])
-@require_daily_stats_password
 def api_calculate_daily_stats():
     """Manually trigger daily statistics calculation"""
     try:
@@ -683,114 +669,6 @@ def api_export_responsible_txt():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/update/status')
-def api_update_status():
-    """Get current application update status"""
-    try:
-        status = update_service.get_status()
-        return jsonify({
-            'success': True,
-            'status': status
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/update/check', methods=['POST'])
-def api_check_for_updates():
-    """Manually check for updates from GitHub"""
-    try:
-        result = update_service.check_for_updates()
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/update/ack', methods=['POST'])
-def api_update_acknowledge():
-    """Mark update notification as acknowledged"""
-    try:
-        status = update_service.acknowledge_notification()
-        return jsonify({
-            'success': True,
-            'status': status
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/update/trigger', methods=['POST'])
-@require_daily_stats_password
-def api_trigger_update():
-    """Trigger auto-update execution"""
-    try:
-        data = request.get_json(silent=True) or {}
-        target_version = data.get('target_version')
-        force_reinstall = data.get('force_reinstall', False)
-        result = update_service.trigger_update(target_version, force_reinstall)
-        return jsonify({
-            'success': True,
-            'result': result
-        })
-    except RuntimeError as e:
-        message = str(e)
-        status_code = 409 if 'in progress' in message.lower() else 400
-        return jsonify({'error': message}), status_code
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/update/reinstall', methods=['POST'])
-@require_daily_stats_password
-def api_reinstall_current_version():
-    """Force reinstall current version"""
-    try:
-        data = request.get_json(silent=True) or {}
-        target_version = data.get('target_version')
-        result = update_service.trigger_update(target_version, force_reinstall=True)
-        return jsonify({
-            'success': True,
-            'result': result,
-            'message': '强制重新安装当前版本已启动'
-        })
-    except RuntimeError as e:
-        message = str(e)
-        status_code = 409 if 'in progress' in message.lower() else 400
-        return jsonify({'error': message}), status_code
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/update/logs')
-@require_daily_stats_password
-def api_get_update_logs():
-    """Get update logs"""
-    try:
-        limit = request.args.get('limit', 50, type=int)
-        logs = update_service.get_update_logs(limit)
-        return jsonify({
-            'success': True,
-            'logs': logs
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/update/logs/<update_id>')
-@require_daily_stats_password
-def api_get_update_log_details(update_id):
-    """Get detailed update log"""
-    try:
-        log_details = update_service.get_update_log_details(update_id)
-        if not log_details:
-            return jsonify({'error': 'Update log not found'}), 404
-        
-        return jsonify({
-            'success': True,
-            'log': log_details
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/update-logs')
-@require_daily_stats_password
-def update_logs_page():
-    """Update logs page"""
-    return render_template('update_logs.html', APP_VERSION=APP_VERSION)
 
 @app.route('/api/export-execution-logs', methods=['GET'])
 def api_export_execution_logs():
@@ -873,53 +751,8 @@ def get_processing_status_route():
     """Get current processing status"""
     return jsonify(get_processing_status())
 
-# Authentication endpoints for daily statistics
-@app.route('/api/daily-stats-auth-status')
-def api_daily_stats_auth_status():
-    """Check authentication status for daily statistics modifications"""
-    return jsonify({
-        'authenticated': PasswordProtection.is_authenticated()
-    })
-
-@app.route('/api/daily-stats-authenticate', methods=['POST'])
-def api_daily_stats_authenticate():
-    """Authenticate user for daily statistics modifications"""
-    try:
-        data = request.get_json()
-        if not data or 'password' not in data:
-            return jsonify({'error': 'Password required'}), 400
-        
-        password = data['password']
-        
-        if PasswordProtection.verify_password(password):
-            PasswordProtection.authenticate_session()
-            return jsonify({
-                'success': True,
-                'message': 'Authentication successful'
-            })
-        else:
-            return jsonify({
-                'error': 'Invalid password'
-            }), 401
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/daily-stats-logout', methods=['POST'])
-def api_daily_stats_logout():
-    """Logout from daily statistics modifications"""
-    try:
-        PasswordProtection.deauthenticate_session()
-        return jsonify({
-            'success': True,
-            'message': 'Logged out successfully'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 # Database backup endpoints
 @app.route('/api/backup/create', methods=['POST'])
-@require_daily_stats_password
 def api_create_backup():
     """Manually create a database backup"""
     try:
@@ -997,7 +830,6 @@ def api_verify_backup():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/backup/cleanup', methods=['POST'])
-@require_daily_stats_password
 def api_cleanup_backups():
     """Clean up old backup files"""
     try:
@@ -1019,7 +851,6 @@ def api_cleanup_backups():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/backup/restore', methods=['POST'])
-@require_daily_stats_password
 def api_restore_backup():
     """Restore database from backup"""
     try:
@@ -1047,7 +878,6 @@ def api_restore_backup():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/backup/download/<filename>')
-@require_daily_stats_password
 def api_download_backup(filename):
     """Download a backup file"""
     try:

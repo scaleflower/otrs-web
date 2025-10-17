@@ -5,28 +5,24 @@ Admin blueprint for system configuration management
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for
 from models import SystemConfig
 from services import system_config_service
-from utils.auth import require_admin_password
 import json
 
 # Create blueprint
 admin_bp = Blueprint('admin', __name__, url_prefix='/admin')
 
 @admin_bp.route('/', methods=['GET', 'POST'])
-@require_admin_password
 def admin_dashboard():
     """Admin dashboard"""
     configs = system_config_service.get_all_configs()
     return render_template('admin/dashboard.html', configs=configs)
 
 @admin_bp.route('/configs')
-@require_admin_password
 def config_list():
     """List all configurations"""
     configs = system_config_service.get_all_configs()
     return render_template('admin/config_list.html', configs=configs)
 
 @admin_bp.route('/configs/edit/<int:config_id>', methods=['GET', 'POST'])
-@require_admin_password
 def edit_config(config_id):
     """Edit a configuration"""
     config = SystemConfig.query.get_or_404(config_id)
@@ -49,7 +45,6 @@ def edit_config(config_id):
     return render_template('admin/config_edit.html', config=config)
 
 @admin_bp.route('/configs/create', methods=['GET', 'POST'])
-@require_admin_password
 def create_config():
     """Create a new configuration"""
     if request.method == 'POST':
@@ -82,7 +77,6 @@ def create_config():
     return render_template('admin/config_create.html')
 
 @admin_bp.route('/configs/delete/<int:config_id>', methods=['POST'])
-@require_admin_password
 def delete_config(config_id):
     """Delete a configuration"""
     try:
@@ -97,14 +91,12 @@ def delete_config(config_id):
     return redirect(url_for('admin.config_list'))
 
 @admin_bp.route('/api/configs')
-@require_admin_password
 def api_configs():
     """API endpoint to get all configurations"""
     configs = system_config_service.get_all_configs()
     return jsonify([config.to_dict() for config in configs])
 
 @admin_bp.route('/api/configs/<key>')
-@require_admin_password
 def api_get_config(key):
     """API endpoint to get a specific configuration"""
     config = SystemConfig.query.filter_by(key=key).first()
@@ -113,7 +105,6 @@ def api_get_config(key):
     return jsonify({'error': 'Configuration not found'}), 404
 
 @admin_bp.route('/api/configs/<key>', methods=['PUT'])
-@require_admin_password
 def api_update_config(key):
     """API endpoint to update a configuration"""
     try:

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}OTRS 工单管理系统{% endblock %}</title>
+
+    <!-- Modern Layout CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/modern-layout.css') }}">
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <nav class="top-navbar">
+        <!-- Logo和品牌名 -->
+        <a href="{{ url_for('index') }}" class="navbar-brand">
+            <div class="navbar-brand-icon">
+                <i class="fas fa-ticket-alt"></i>
+            </div>
+            <span>OTRS工单系统</span>
+        </a>
+
+        <!-- 主菜单 -->
+        <div class="navbar-menu">
+            <a href="{{ url_for('index') }}" class="navbar-menu-item {% if request.endpoint == 'index' %}active{% endif %}">
+                <i class="fas fa-home"></i> 首页
+            </a>
+            <a href="{{ url_for('statistics_bp.statistics_page') }}" class="navbar-menu-item {% if 'statistics' in request.endpoint %}active{% endif %}">
+                <i class="fas fa-chart-bar"></i> 统计分析
+            </a>
+            <a href="{{ url_for('responsible_stats') }}" class="navbar-menu-item {% if 'responsible' in request.endpoint %}active{% endif %}">
+                <i class="fas fa-users"></i> 负责人统计
+            </a>
+            <a href="{{ url_for('database_page') }}" class="navbar-menu-item {% if 'database' in request.endpoint %}active{% endif %}">
+                <i class="fas fa-database"></i> 数据概览
+            </a>
+        </div>
+
+        <!-- 右侧操作区 -->
+        <div class="navbar-actions">
+            <!-- 搜索框 -->
+            <div class="navbar-search">
+                <i class="fas fa-search navbar-search-icon"></i>
+                <input type="text" class="navbar-search-input" placeholder="搜索工单...">
+            </div>
+
+            <!-- 通知图标 -->
+            <button class="navbar-icon-btn" title="通知">
+                <i class="fas fa-bell"></i>
+                <span class="badge"></span>
+            </button>
+
+            <!-- 帮助图标 -->
+            <button class="navbar-icon-btn" title="帮助">
+                <i class="fas fa-question-circle"></i>
+            </button>
+
+            <!-- 用户信息 -->
+            <div class="navbar-user" onclick="toggleUserMenu()">
+                <div class="navbar-user-avatar">
+                    {{ session.get('username', 'Admin')[0].upper() }}
+                </div>
+                <span>{{ session.get('username', 'Admin') }}</span>
+                <i class="fas fa-chevron-down"></i>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主容器 -->
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        {% block sidebar %}
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3 class="sidebar-title">功能菜单</h3>
+                <button class="sidebar-collapse-btn" onclick="toggleSidebar()">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+
+            <div class="sidebar-menu">
+                {% block sidebar_menu %}
+                <!-- 工单管理 -->
+                <div class="sidebar-menu-group">
+                    <div class="sidebar-menu-group-title">工单管理</div>
+                    <a href="{{ url_for('index') }}" class="sidebar-menu-item {% if request.endpoint == 'index' %}active{% endif %}">
+                        <span class="sidebar-menu-item-icon">
+                            <i class="fas fa-upload"></i>
+                        </span>
+                        <span class="sidebar-menu-item-text">上传工单</span>
+                    </a>
+                    <a href="{{ url_for('view_uploads') }}" class="sidebar-menu-item {% if request.endpoint == 'view_uploads' %}active{% endif %}">
+                        <span class="sidebar-menu-item-icon">
+                            <i class="fas fa-list"></i>
+                        </span>
+                        <span class="sidebar-menu-item-text">工单列表</span>
+                    </a>
+                </div>
+
+                <!-- 统计报表 -->
+                <div class="sidebar-menu-group">
+                    <div class="sidebar-menu-group-title">统计报表</div>
+                    <a href="{{ url_for('statistics_bp.statistics_page') }}" class="sidebar-menu-item {% if 'statistics' in request.endpoint %}active{% endif %}">
+                        <span class="sidebar-menu-item-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </span>
+                        <span class="sidebar-menu-item-text">工单统计</span>
+                    </a>
+                    <a href="{{ url_for('responsible_stats') }}" class="sidebar-menu-item {% if 'responsible' in request.endpoint %}active{% endif %}">
+                        <span class="sidebar-menu-item-icon">
+                            <i class="fas fa-user-chart"></i>
+                        </span>
+                        <span class="sidebar-menu-item-text">负责人统计</span>
+                    </a>
+                    <a href="{{ url_for('daily_statistics_page') }}" class="sidebar-menu-item {% if 'daily-statistics' in request.endpoint %}active{% endif %}">
+                        <span class="sidebar-menu-item-icon">
+                            <i class="fas fa-calendar-day"></i>
+                        </span>
+                        <span class="sidebar-menu-item-text">每日统计</span>
+                    </a>
+                </div>
+
+                <!-- 系统管理 -->
+                <div class="sidebar-menu-group">
+                    <div class="sidebar-menu-group-title">系统</div>
+                    <a href="{{ url_for('database_page') }}" class="sidebar-menu-item {% if 'database' in request.endpoint %}active{% endif %}">
+                        <span class="sidebar-menu-item-icon">
+                            <i class="fas fa-database"></i>
+                        </span>
+                        <span class="sidebar-menu-item-text">数据库</span>
+                    </a>
+                    <a href="/admin" class="sidebar-menu-item">
+                        <span class="sidebar-menu-item-icon">
+                            <i class="fas fa-cog"></i>
+                        </span>
+                        <span class="sidebar-menu-item-text">后台管理</span>
+                    </a>
+                </div>
+                {% endblock %}
+            </div>
+        </aside>
+        {% endblock %}
+
+        <!-- 主内容区 -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // 侧边栏折叠/展开
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+        }
+
+        // 用户菜单
+        function toggleUserMenu() {
+            alert('用户菜单功能待实现');
+        }
+
+        // 搜索功能
+        document.querySelector('.navbar-search-input')?.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const searchText = this.value.trim();
+                if (searchText) {
+                    alert('搜索功能待实现: ' + searchText);
+                }
+            }
+        });
+    </script>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

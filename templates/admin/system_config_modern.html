@@ -1,0 +1,306 @@
+{% extends "admin_base_modern.html" %}
+
+{% block title %}系统设置 - 后台管理 - OTRS工单管理系统{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="admin-page-header">
+    <h1 class="admin-page-title">
+        <i class="fas fa-cog"></i>
+        系统设置
+    </h1>
+    <p class="admin-page-description">配置系统基础参数、应用行为和功能开关</p>
+</div>
+
+<!-- 提示信息 -->
+<div class="admin-alert info">
+    <i class="fas fa-info-circle"></i>
+    <span>修改配置后需要重启应用才能生效。请谨慎操作，建议在维护窗口期进行。</span>
+</div>
+
+<!-- 配置表单 -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 24px;">
+    <!-- 基础设置 -->
+    <div class="admin-form">
+        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-server" style="color: var(--primary-color);"></i>
+            基础设置
+        </h3>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label required">系统名称</label>
+            <input type="text" class="admin-form-input" value="OTRS工单管理系统" placeholder="请输入系统名称">
+            <div class="admin-form-hint">将显示在浏览器标签页和导航栏</div>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label required">系统版本</label>
+            <input type="text" class="admin-form-input" value="1.2.9" readonly>
+            <div class="admin-form-hint">当前运行版本，由系统自动管理</div>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">系统描述</label>
+            <textarea class="admin-form-textarea" placeholder="请输入系统描述">企业级OTRS工单管理与分析平台</textarea>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">时区设置</label>
+            <select class="admin-form-select">
+                <option value="Asia/Shanghai" selected>Asia/Shanghai (UTC+8)</option>
+                <option value="Asia/Tokyo">Asia/Tokyo (UTC+9)</option>
+                <option value="America/New_York">America/New_York (UTC-5)</option>
+                <option value="Europe/London">Europe/London (UTC+0)</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 数据库设置 -->
+    <div class="admin-form">
+        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-database" style="color: var(--success-color);"></i>
+            数据库设置
+        </h3>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">数据库类型</label>
+            <select class="admin-form-select" onchange="toggleDatabaseFields(this.value)">
+                <option value="sqlite" selected>SQLite</option>
+                <option value="postgresql">PostgreSQL</option>
+            </select>
+        </div>
+
+        <div id="sqliteFields">
+            <div class="admin-form-group">
+                <label class="admin-form-label">数据库文件路径</label>
+                <input type="text" class="admin-form-input" value="db/otrs_data.db" readonly>
+                <div class="admin-form-hint">SQLite数据库文件存储位置</div>
+            </div>
+        </div>
+
+        <div id="postgresqlFields" style="display: none;">
+            <div class="admin-form-group">
+                <label class="admin-form-label required">主机地址</label>
+                <input type="text" class="admin-form-input" value="localhost" placeholder="localhost">
+            </div>
+
+            <div class="admin-form-group">
+                <label class="admin-form-label required">端口</label>
+                <input type="number" class="admin-form-input" value="5432" placeholder="5432">
+            </div>
+
+            <div class="admin-form-group">
+                <label class="admin-form-label required">数据库名</label>
+                <input type="text" class="admin-form-input" value="otrs_db" placeholder="otrs_db">
+            </div>
+
+            <div class="admin-form-group">
+                <label class="admin-form-label required">用户名</label>
+                <input type="text" class="admin-form-input" value="otrs_user" placeholder="otrs_user">
+            </div>
+
+            <div class="admin-form-group">
+                <label class="admin-form-label required">密码</label>
+                <input type="password" class="admin-form-input" placeholder="••••••••">
+            </div>
+        </div>
+
+        <div class="admin-form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" checked>
+                <span style="font-size: 14px;">启用连接池</span>
+            </label>
+            <div class="admin-form-hint">提高数据库连接性能</div>
+        </div>
+    </div>
+
+    <!-- 上传设置 -->
+    <div class="admin-form">
+        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-upload" style="color: var(--warning-color);"></i>
+            上传设置
+        </h3>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label required">最大文件大小 (MB)</label>
+            <input type="number" class="admin-form-input" value="16" min="1" max="100">
+            <div class="admin-form-hint">单个文件上传大小限制</div>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">允许的文件类型</label>
+            <input type="text" class="admin-form-input" value=".xlsx, .xls" readonly>
+            <div class="admin-form-hint">支持的Excel文件格式</div>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">上传目录</label>
+            <input type="text" class="admin-form-input" value="uploads/" readonly>
+            <div class="admin-form-hint">上传文件存储目录</div>
+        </div>
+    </div>
+
+    <!-- 日志设置 -->
+    <div class="admin-form">
+        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-file-alt" style="color: var(--info-color);"></i>
+            日志设置
+        </h3>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">日志级别</label>
+            <select class="admin-form-select">
+                <option value="DEBUG">DEBUG - 调试信息</option>
+                <option value="INFO" selected>INFO - 一般信息</option>
+                <option value="WARNING">WARNING - 警告信息</option>
+                <option value="ERROR">ERROR - 错误信息</option>
+            </select>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">日志目录</label>
+            <input type="text" class="admin-form-input" value="logs/" readonly>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">单个日志文件最大大小 (MB)</label>
+            <input type="number" class="admin-form-input" value="10" min="1" max="100">
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">日志文件保留数量</label>
+            <input type="number" class="admin-form-input" value="5" min="1" max="50">
+            <div class="admin-form-hint">超过数量后自动删除旧日志</div>
+        </div>
+    </div>
+
+    <!-- 备份设置 -->
+    <div class="admin-form">
+        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-save" style="color: var(--success-color);"></i>
+            备份设置
+        </h3>
+
+        <div class="admin-form-group">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" checked>
+                <span style="font-size: 14px; font-weight: 500;">启用自动备份</span>
+            </label>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">备份时间</label>
+            <input type="time" class="admin-form-input" value="02:00">
+            <div class="admin-form-hint">每天自动备份的时间</div>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">备份保留天数</label>
+            <input type="number" class="admin-form-input" value="30" min="1" max="365">
+            <div class="admin-form-hint">超过天数的备份将自动删除</div>
+        </div>
+
+        <div class="admin-form-group">
+            <label class="admin-form-label">备份目录</label>
+            <input type="text" class="admin-form-input" value="database_backups/" readonly>
+        </div>
+    </div>
+
+    <!-- 功能开关 -->
+    <div class="admin-form">
+        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-toggle-on" style="color: var(--primary-color);"></i>
+            功能开关
+        </h3>
+
+        <div class="admin-form-group">
+            <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                <div>
+                    <div style="font-weight: 500; margin-bottom: 4px;">每日统计</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">自动计算每日工单统计数据</div>
+                </div>
+                <input type="checkbox" checked>
+            </label>
+        </div>
+
+        <div class="admin-form-group">
+            <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                <div>
+                    <div style="font-weight: 500; margin-bottom: 4px;">数据导出</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">允许用户导出统计数据</div>
+                </div>
+                <input type="checkbox" checked>
+            </label>
+        </div>
+
+        <div class="admin-form-group">
+            <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                <div>
+                    <div style="font-weight: 500; margin-bottom: 4px;">系统通知</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">启用系统消息通知功能</div>
+                </div>
+                <input type="checkbox" checked>
+            </label>
+        </div>
+
+        <div class="admin-form-group" style="margin-bottom: 0;">
+            <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
+                <div>
+                    <div style="font-weight: 500; margin-bottom: 4px;">调试模式</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">显示详细的错误信息（生产环境请关闭）</div>
+                </div>
+                <input type="checkbox">
+            </label>
+        </div>
+    </div>
+</div>
+
+<!-- 操作按钮 -->
+<div style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end;">
+    <button class="btn btn-default" onclick="resetForm()">
+        <i class="fas fa-undo"></i>
+        重置
+    </button>
+    <button class="btn btn-default" onclick="testConnection()">
+        <i class="fas fa-plug"></i>
+        测试连接
+    </button>
+    <button class="btn btn-primary" onclick="saveConfig()">
+        <i class="fas fa-save"></i>
+        保存配置
+    </button>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleDatabaseFields(type) {
+    const sqliteFields = document.getElementById('sqliteFields');
+    const postgresqlFields = document.getElementById('postgresqlFields');
+
+    if (type === 'sqlite') {
+        sqliteFields.style.display = 'block';
+        postgresqlFields.style.display = 'none';
+    } else {
+        sqliteFields.style.display = 'none';
+        postgresqlFields.style.display = 'block';
+    }
+}
+
+function resetForm() {
+    if (confirm('确定要重置所有配置吗？')) {
+        location.reload();
+    }
+}
+
+function testConnection() {
+    alert('连接测试功能待实现');
+}
+
+function saveConfig() {
+    if (confirm('保存配置后需要重启应用才能生效，确定要保存吗？')) {
+        alert('保存配置功能待实现');
+    }
+}
+</script>
+{% endblock %}
