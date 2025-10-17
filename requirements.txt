@@ -5,7 +5,7 @@ openpyxl==3.0.9
 xlrd==2.0.1
 gunicorn==20.1.0
 matplotlib==3.5.3
-APScheduler==3.10.1
+APScheduler==3.10.4
 tzlocal>=2.0,<3.0
 python-dotenv==1.0.0
 requests==2.31.0
